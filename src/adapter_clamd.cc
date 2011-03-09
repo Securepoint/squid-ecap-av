@@ -1,36 +1,28 @@
 /*
- *	Securepoint eCAP clamd Adapter
- *	Copyright (C) 2011 Gernot Tenchio, Securepoint GmbH, Germany.
+ * Securepoint eCAP clamd Adapter
+ * Copyright (C) 2011 Gernot Tenchio, Securepoint GmbH, Germany.
  *
- *	http://www.securepoint.de/
- * 
- *	This program is free software; you can redistribute it and/or
- *	modify it under the terms of the GNU General Public License
- *	as published by the Free Software Foundation; either version 2
- *	of the License, or (at your option) any later version.
- *	 
- *	This program is distributed in the hope that it will be useful,
- *	but WITHOUT ANY WARRANTY; without even the implied warranty of
- *	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *	GNU General Public License for more details.
- *	 
- *	You should have received a copy of the GNU General Public License
- *	along with this program; if not, write to the Free Software
- *	Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+ * http://www.securepoint.de/
  *
- *	-----------------------------------------------------------------
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version 2
+ * of the License, or (at your option) any later version.
  *
- *	This eCAP adapter is based on the eCAP adapter sample,
- *	available under the following license:
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  *
- *	Copyright 2008 The Measurement Factory.
- *	All rights reserved.
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  *
- *	This Software is licensed under the terms of the eCAP library (libecap),
- *	including warranty disclaimers and liability limitations.
- * 
- *	http://www.e-cap.org/
- * 
+ * -----------------------------------------------------------------
+ *
+ * based on the eCAP adapter samples, see: http://www.e-cap.org/
+ *
+ * -----------------------------------------------------------------
  */
 
 #include <stdio.h>
@@ -39,7 +31,10 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <fcntl.h>
 #include <iostream>
+#include <string>
+#include <cerrno>
 #include <libecap/common/message.h>
 #include <libecap/common/registry.h>
 #include <libecap/common/errors.h>
@@ -49,45 +44,70 @@
 #include <libecap/adapter/xaction.h>
 #include <libecap/host/xaction.h>
 
+using namespace std;
+
 const char *socketpath = "/tmp/clamd.sock";
+// const char *socketpath = "/var/run/clamd.scan/clamd.sock";
+
+#define FUNCENTER() // cerr << "==> " << __FUNCTION__ << endl
+#define DBG cerr << __FUNCTION__ << ", "
+
+#define TIMEOUT 5
+#define ERR cerr << __FUNCTION__ << ", "
+
+#define TRICKLE_TIME 10	// start trickling after 30 seconds
 
 namespace Adapter
 {                               // not required, but adds clarity
 
-  using libecap::size_type;
-  using libecap::StatusLine;
+using libecap::size_type;
+using libecap::StatusLine;
 
-  class Service:public libecap::adapter::Service
-  {
+class Service:public libecap::adapter::Service
+{
 
-  public:
+public:
     // About
     virtual std::string uri() const;    // unique across all vendors
     virtual std::string tag() const;    // changes with version and config
     virtual void describe(std::ostream & os) const;     // free-format info
 
     // Configuration
+#ifdef V003
     virtual void configure(const Config & cfg);
     virtual void reconfigure(const Config & cfg);
-
+#else
+    virtual void configure(const libecap::Options &cfg);
+    virtual void reconfigure(const libecap::Options &cfg);
+#endif
     // Lifecycle
     virtual void start();       // expect makeXaction() calls
     virtual void stop();        // no more makeXaction() calls until start()
     virtual void retire();      // no more makeXaction() calls
 
-    // Scope (XXX: this may be changed to look at the whole header)
+    // Scope
     virtual bool wantsUrl(const char *url) const;
 
     // Work
-    virtual libecap::adapter::Xaction * makeXaction(libecap::host::Xaction *
-      hostx);
-  };
+    virtual libecap::adapter::Xaction * makeXaction(libecap::host::Xaction * hostx);
 
-  class Xaction:public libecap::adapter::Xaction
-  {
-  public:
+    int trickle_time; // the time to wait before trickling
+};
+
+class Xaction:public libecap::adapter::Xaction
+{
+public:
+#ifdef V003
     Xaction(libecap::host::Xaction * x);
     virtual ~ Xaction();
+#else
+    Xaction(libecap::shared_ptr<Service> s, libecap::host::Xaction *x);
+    virtual ~ Xaction();
+
+    // meta-information for the host transaction
+    virtual const libecap::Area option(const libecap::Name &name) const;
+    virtual void visitEachOption(libecap::NamedValueVisitor &visitor) const;
+#endif
 
     // lifecycle
     virtual void start();
@@ -110,422 +130,554 @@ namespace Adapter
     // libecap::Callable API, via libecap::host::Xaction
     virtual bool callable() const;
 
-  protected:
-          libecap::host::Xaction * lastHostCall();      // clears hostx
+protected:
+    void stopVb(); // stops receiving vb (if we are receiving it)
+    libecap::host::Xaction * lastHostCall();      // clears hostx
 
-  private:
-          libecap::host::Xaction * hostx;       // Host transaction rep
+private:
+#ifndef V003
+    libecap::shared_ptr<const Service> service; // configuration access
+#endif
+    libecap::host::Xaction * hostx;       // Host transaction rep
+    libecap::shared_ptr <libecap::Message> adapted;
+    typedef enum { opUndecided, opOn, opComplete, opNever } OperationState;
+    typedef enum { opBuffered, opTrickle, opViralator } OperationMode;
+    typedef enum { stOK, stError, stInfected } ScanState;
 
-    typedef enum
-    { opUndecided, opOn, opComplete, opNever } OperationState;
     OperationState receivingVb;
     OperationState sendingAb;
+    OperationMode avMode;
 
-    struct clamdContext
+    struct Ctx
     {
-      int sockfd;
-      char *buf;
-      size_type bufsize;
-    }           *clamdContext;
+        int sockfd;
+        int tempfd;
+        int state;
+        char *tempfn;
+        char buf[BUFSIZ];
+    } *Ctx;
 
-    void clamdInitialize();
-    void clamdFinalize();
+    void openTempfile(void);
 
-    struct
-    {
-      bool responseCacheControlOk;
-      bool responseContentTypeOk;
-      bool requestAcceptEncodingOk;
-    } requirements;
+    void avStart(void);
+    void processContent(void);
+    int avReadResponse(void);
+    int avWriteCommand(const char *command);
+    void guessMode(void);
+    bool mustScan(libecap::Area area);
 
-    bool requirementsAreMet();
-  };
-
-}                               // namespace Adapter
+    size_type received;
+    size_type processed;
+    size_type contentlength;
+    time_t startTime;
+    time_t lastContent;
+    bool trickled;
+};
+} // namespace Adapter
 
 /**
- * Determines if the response can be compressed or not. 
+ * Determines if we should scan or not.
  */
-bool Adapter::Xaction::requirementsAreMet()
+bool Adapter::Xaction::mustScan(libecap::Area area)
 {
-
-  if (!requirements.responseCacheControlOk) {
-    return false;
-  }
-
-  if (!requirements.responseContentTypeOk) {
-    return false;
-  }
-
-  if (!requirements.requestAcceptEncodingOk) {
-    return false;
-  }
-
-  return true;
-}
-
-/**
- * Initializes the clamd data structures.
- */
-void Adapter::Xaction::clamdInitialize()
-{
-  struct sockaddr_un address;
-  int sockfd;
-
-  if (!(clamdContext =
-      (struct clamdContext *) malloc(sizeof(struct clamdContext)))) {
-    /* error */
-  } else if ((sockfd = socket(AF_LOCAL, SOCK_STREAM, 0)) == -1) {
-    return;
-  } else {
-    memset(&address, 0, sizeof(address));
-    address.sun_family = AF_LOCAL;
-    strncpy(address.sun_path, socketpath, sizeof(address.sun_path));
-
-    if (connect(sockfd, (struct sockaddr *) &address, sizeof(address)) == -1) {
-      close(sockfd);
-    } else {
-      clamdContext->sockfd = sockfd;
+    ERR << "Placebo alert! Place file detection code here! area.size " << area.size << " area.start[0] " << area.start[0] << endl;
+    if (area.size) {
+        if (area.start[0] == '<')
+            return false;
+        else
+            return true;
     }
-  }
+    return true;
 }
 
-//
-// Close the clamd socket and free the data structures.
-//
-void Adapter::Xaction::clamdFinalize()
+void Adapter::Xaction::guessMode(void)
 {
-  if (clamdContext) {
-    close(clamdContext->sockfd);
-    free(clamdContext);
-    clamdContext = 0;
-  }
+}
+
+static int doconnect(void)
+{
+    int sockfd = -1;
+
+    if ((sockfd = socket(AF_LOCAL, SOCK_STREAM, 0)) == -1) {
+        ERR << "can't initialize clamd socket: " << strerror(errno) << endl;
+    } else {
+        struct sockaddr_un address;
+        memset(&address, 0, sizeof(address));
+        address.sun_family = AF_LOCAL;
+        strncpy(address.sun_path, socketpath, sizeof(address.sun_path));
+        if (connect(sockfd, (struct sockaddr *) &address, sizeof(address)) == -1) {
+            ERR << "can't connect to clamd socket: " << strerror(errno) << endl;
+            close(sockfd);
+            sockfd = -1;
+        }
+        fcntl(sockfd, F_SETFL, fcntl(sockfd, F_GETFL) | O_NONBLOCK);
+        DBG << "opened clamd socket @ " << sockfd << endl;
+    }
+    return sockfd;
+}
+
+void Adapter::Xaction::openTempfile(void)
+{
+    char fn[] = "/var/tmp/squid-ecap-XXXXXX";
+    FUNCENTER();
+
+    mkstemp(fn);
+    if (-1 == (Ctx->tempfd = open(fn, O_RDWR))) {
+        ERR << "can't open temp file " << fn << endl;
+        Ctx->state = stError;
+        return;
+    }
+    DBG << "opened temp file " << fn << endl;
+    Ctx->tempfn = strdup(fn);
+}
+
+int Adapter::Xaction::avWriteCommand(const char *command)
+{
+    fd_set wfds;
+    struct timeval tv;
+    int n;
+
+    FUNCENTER();
+
+    Must(command);
+    n = strlen(command) + 1;
+
+    tv.tv_sec = TIMEOUT;
+    tv.tv_usec = 0;
+
+    FD_ZERO(&wfds);
+    FD_SET(Ctx->sockfd, &wfds);
+
+    if (n == write(Ctx->sockfd, command, n)) {
+        return n;
+    } else if (n == -1 && errno != EAGAIN) {
+        ERR << "write: " << strerror(errno) << endl;
+    } else if (-1 == select(Ctx->sockfd + 1, &wfds, NULL, NULL, &tv)) {
+        ERR << "select: " << strerror(errno) << endl;
+    } else if (!(FD_ISSET(Ctx->sockfd, &wfds))) {
+        ERR << "timeout @ " << Ctx->sockfd << endl;
+    } else {
+        // write the trailing NULL character too
+        return write(Ctx->sockfd, command, n);
+    }
+    return -1;
+}
+
+int Adapter::Xaction::avReadResponse(void)
+{
+    char buf[1024];
+    fd_set rfds;
+    struct timeval tv;
+    int n;
+
+    FUNCENTER();
+
+    tv.tv_sec = TIMEOUT;
+    tv.tv_usec = 0;
+
+    FD_ZERO(&rfds);
+    FD_SET(Ctx->sockfd,&rfds);
+
+    if (-1 != (n = read(Ctx->sockfd, buf, sizeof(buf)))) {
+        DBG << buf << endl;
+        return n;
+    } else if (errno != EAGAIN) {
+        ERR << "read: " << strerror(errno) << endl;
+    } else if (-1 == select(Ctx->sockfd + 1, &rfds, NULL, NULL, &tv)) {
+        ERR << "select; " << strerror(errno) << endl;
+    } else if (!FD_ISSET(Ctx->sockfd, &rfds)) {
+        ERR << "timeout @ " << Ctx->sockfd << endl;
+        return -2;
+    } else if (-1 == (n = read(Ctx->sockfd, buf, sizeof(buf)))) {
+        ERR << "read: " << strerror(errno) << endl;
+    } else {
+        DBG << buf << endl;
+        return n;
+    }
+    return -1;
+}
+
+void Adapter::Xaction::avStart(void)
+{
+    struct iovec iov[1];
+    struct msghdr msg;
+    struct cmsghdr *cmsg;
+    unsigned char fdbuf[CMSG_SPACE(sizeof(int))];
+    char dummy[]="";
+    int fd;
+
+    FUNCENTER();
+
+    if (-1 == (Ctx->sockfd = doconnect()))
+        return;
+
+    if (-1 == avWriteCommand("zFILDES")) {
+        Ctx->state = stError;
+        return;
+    }
+
+    iov[0].iov_base = dummy;
+    iov[0].iov_len = 1;
+    memset(&msg, 0, sizeof(msg));
+    msg.msg_control = fdbuf;
+    msg.msg_iov = iov;
+    msg.msg_iovlen = 1;
+    msg.msg_controllen = CMSG_LEN(sizeof(int));
+    cmsg = CMSG_FIRSTHDR(&msg);
+    cmsg->cmsg_len = CMSG_LEN(sizeof(int));
+    cmsg->cmsg_level = SOL_SOCKET;
+    cmsg->cmsg_type = SCM_RIGHTS;
+    *(int *)CMSG_DATA(cmsg) = Ctx->tempfd;
+    if(sendmsg(Ctx->sockfd, &msg, 0) == -1) {
+        ERR << "FD send failed: " << strerror(errno) << endl;
+        Ctx->state = stError;
+    }
 }
 
 std::string Adapter::Service::uri() const
 {
-  return "ecap://www.securepoint.de/ecap_clamd";
+    FUNCENTER();
+    return "ecap://www.securepoint.de/ecap_clamd";
 }
 
 std::string Adapter::Service::tag() const
 {
-  return PACKAGE_VERSION;
+    FUNCENTER();
+    return PACKAGE_VERSION;
 }
 
 void Adapter::Service::describe(std::ostream & os) const
 {
-  os << "clamd eCAP adapter";
+    FUNCENTER();
+    os << "clamd eCAP adapter";
 }
 
+#ifdef V003
 void Adapter::Service::configure(const Config &)
+#else
+void Adapter::Service::configure(const libecap::Options &cfg)
+#endif
 {
-  // this service is not configurable
+    FUNCENTER();
+    // this service is not configurable
 }
 
+#ifdef V003
 void Adapter::Service::reconfigure(const Config &)
+#else
+void Adapter::Service::reconfigure(const libecap::Options &cfg)
+#endif
 {
-  // this service is not configurable
+    FUNCENTER();
+    // this service is not configurable
 }
 
 void Adapter::Service::start()
 {
-  // libecap::adapter::Service::start();
-  // custom code would go here, but this service does not have one
-  fprintf(stdout,"%s\n", __func__);
+    FUNCENTER();
+    char *test;
+    libecap::adapter::Service::start();
+
+    if ((test = getenv("TRICKLE_TIME")))
+        cerr << __FUNCTION__ << " " << test << endl;
+    // custom code would go here, but this service does not have one
 }
 
 void Adapter::Service::stop()
 {
-  // custom code would go here, but this service does not have one
-  libecap::adapter::Service::stop();
+    FUNCENTER();
+    // custom code would go here, but this service does not have one
+    libecap::adapter::Service::stop();
 }
 
 void Adapter::Service::retire()
 {
-  // custom code would go here, but this service does not have one
-  libecap::adapter::Service::stop();
+    FUNCENTER();
+    // custom code would go here, but this service does not have one
+    libecap::adapter::Service::stop();
 }
 
 bool Adapter::Service::wantsUrl(const char *url) const
 {
-  return true;                  // no-op is applied to all messages
+    FUNCENTER();
+    return true;                  // no-op is applied to all messages
 }
 
 libecap::adapter::Xaction *
-  Adapter::Service::makeXaction(libecap::host::Xaction * hostx)
+Adapter::Service::makeXaction(libecap::host::Xaction * hostx)
 {
-  return new Adapter::Xaction(hostx);
+    FUNCENTER();
+#ifdef V003
+    return new Adapter::Xaction(hostx);
+#else
+    return new Adapter::Xaction(std::tr1::static_pointer_cast<Service>(self), hostx);
+#endif
 }
 
-// Constructor
+#ifdef V003
 Adapter::Xaction::Xaction(libecap::host::Xaction * x):hostx(x),
-receivingVb(opUndecided),
-sendingAb(opUndecided)
+#else
+Adapter::Xaction::Xaction(libecap::shared_ptr < Service > aService, libecap::host::Xaction * x):service(aService), hostx(x),
+#endif
+    receivingVb(opUndecided),
+    sendingAb(opUndecided)
 {
+    received = processed = 0;
+    trickled = false;
 }
 
-// Destructor
 Adapter::Xaction::~Xaction()
 {
-  if (libecap::host::Xaction * x = hostx) {
-    hostx = 0;
-    x->adaptationAborted();
-  }
+    FUNCENTER();
+
+    if (Ctx) {
+        close(Ctx->sockfd);
+        close(Ctx->tempfd);
+        unlink(Ctx->tempfn);
+        free(Ctx->tempfn);
+        free(Ctx);
+    }
+
+    if (libecap::host::Xaction * x = hostx) {
+        hostx = 0;
+        x->adaptationAborted();
+    }
 }
+
+#ifndef V003
+const libecap::Area Adapter::Xaction::option(const libecap::Name &) const {
+    return libecap::Area(); // this transaction has no meta-information
+}
+
+void Adapter::Xaction::visitEachOption(libecap::NamedValueVisitor &) const {
+    // this transaction has no meta-information to pass to the visitor
+}
+#endif
 
 void Adapter::Xaction::start()
 {
-  clamdContext = 0;
+    FUNCENTER();
+    Ctx = 0;
 
-  Must(hostx);
-  if (hostx->virgin().body()) {
-    receivingVb = opOn;
-    hostx->vbMake();            // ask host to supply virgin body
-  } else {
-    receivingVb = opNever;
-  }
-
-  libecap::shared_ptr < libecap::Message > adapted = hostx->virgin().clone();
-  Must(adapted != 0);
-
-#if 0
-  //
-  // Checks if the response Cache-Control header allows transformation of the response.
-  //
-  static const libecap::Name cacheControlName("Cache-Control");
-
-  // Set default value
-  this->requirements.responseCacheControlOk = true;
-
-  if (adapted->header().hasAny(cacheControlName)) {
-    const libecap::Header::Value cacheControl =
-      adapted->header().value(cacheControlName);
-
-    if (cacheControl.size > 0) {
-      std::string cacheControlString = cacheControl.toString(); // expensive
-
-      if (strstr(cacheControlString.c_str(), "no-transform")) {
-        this->requirements.responseCacheControlOk = false;
-      }
-    }
-  }
-  //
-  // Checks the Content-Type response header.
-  // At this time, only responses with "text/html" content-type are allowed to be compressed.
-  //
-  static const libecap::Name contentTypeName("Content-Type");
-
-  // Set default value
-  this->requirements.responseContentTypeOk = false;
-
-  if (adapted->header().hasAny(contentTypeName)) {
-    const libecap::Header::Value contentType =
-      adapted->header().value(contentTypeName);
-
-    if (contentType.size > 0) {
-      std::string contentTypeString = contentType.toString();   // expensive
-
-      if (strstr(contentTypeString.c_str(), "text/html")) {
-        this->requirements.responseContentTypeOk = true;
-      }
-    }
-  }
-#endif
-
-  // delete ContentLength header because we may change the length
-  // unknown length may have performance implications for the host
-  adapted->header().removeAny(libecap::headerContentLength);
-
-  // Add informational response header    
-  static const libecap::Name name("X-Ecap");
-  const libecap::Header::Value value =
-    libecap::Area::FromTempString("Securepoint eCAP clamd Adapter");
-  adapted->header().add(name, value);
-
-  // Add "Vary: Accept-Encoding" response header if Content-Type is "text/html"
-  if (requirements.responseContentTypeOk) {
-    static const libecap::Name varyName("Vary");
-    const libecap::Header::Value varyValue =
-      libecap::Area::FromTempString("Accept-Encoding");
-    adapted->header().add(varyName, varyValue);
-
-  }
-
-  if (!adapted->body()) {
-    sendingAb = opNever;        // there is nothing to send
-    lastHostCall()->useAdapted(adapted);
-  } else {
-    if (requirementsAreMet()) {
-      // Remove Content-Location header
-      static const libecap::Name contentLocationName("Content-Location");
-      adapted->header().removeAny(contentLocationName);
-
-      // Remove ETag response header
-      static const libecap::Name eTagName("ETag");
-      adapted->header().removeAny(eTagName);
-
-      // Add "Content-Encoding: gzip" response header
-      static const libecap::Name contentEncodingName("Content-Encoding");
-      const libecap::Header::Value contentEncodingValue =
-        libecap::Area::FromTempString("gzip");
-      adapted->header().add(contentEncodingName, contentEncodingValue);
-
-      // Add Warning header to response, according to RFC 2616 14.46
-      static const libecap::Name warningName("Warning");
-      const libecap::Header::Value warningValue =
-        libecap::Area::FromTempString("214 Transformation applied");
-      adapted->header().add(warningName, warningValue);
-
-      clamdInitialize();
-      hostx->useAdapted(adapted);
+    Must(hostx);
+    if (hostx->virgin().body()) {
+        receivingVb = opOn;
+        hostx->vbMake();            // ask host to supply virgin body
     } else {
-      hostx->useVirgin();
-      abDiscard();
+        receivingVb = opNever;
     }
-  }
+
+    adapted = hostx->virgin().clone();
+    Must(adapted != 0);
+
+    // try to read the Content-Length header
+    if (adapted->header().hasAny(libecap::headerContentLength)) {
+        const libecap::Header::Value value =
+            adapted->header().value(libecap::headerContentLength);
+        if (value.size > 0) {
+            contentlength = strtol(value.start, NULL, 10);
+            cerr << "Content-Length: " << value.start << endl;
+        }
+    }
+
+    // Add informational response header
+    static const libecap::Name name("X-Ecap");
+    const libecap::Header::Value value =
+        libecap::Area::FromTempString("Securepoint eCAP clamd Adapter");
+    adapted->header().add(name, value);
+
+    if (!adapted->body()) {
+        cerr << "Xaction::start: Nothing to send here!" << endl;
+        sendingAb = opNever;        // there is nothing to send
+        lastHostCall()->useAdapted(adapted);
+    } else {
+        // remember to delete the ContentLength header if are in viralator mode
+        Ctx = (struct Ctx *)calloc(1, sizeof(struct Ctx));
+        startTime = time(NULL);
+        adapted->header().removeAny(libecap::headerContentLength);
+    }
 }
 
 void Adapter::Xaction::stop()
 {
-  hostx = 0;
-  // the caller will delete
+    FUNCENTER();
+    hostx = 0;
+    // the caller will delete
 }
 
 void Adapter::Xaction::abDiscard()
 {
-  Must(sendingAb == opUndecided);       // have not started yet
+    FUNCENTER();
 
-  sendingAb = opNever;
+    Must(sendingAb == opUndecided);       // have not started yet
+    sendingAb = opNever;
+    stopVb();
 }
 
 void Adapter::Xaction::abMake()
 {
-  Must(sendingAb == opUndecided);       // have not yet started or decided not to send
-  Must(hostx->virgin().body()); // that is our only source of ab content
+    FUNCENTER();
+    Must(sendingAb == opUndecided);       // have not yet started or decided not to send
+    Must(hostx->virgin().body());		// that is our only source of ab content
 
-  // we are or were receiving vb
-  Must(receivingVb == opOn || receivingVb == opComplete);
+    // we are or were receiving vb
+    Must(receivingVb == opOn || receivingVb == opComplete);
 
-  sendingAb = opOn;
-  hostx->noteAbContentAvailable();
+    sendingAb = opOn;
 }
 
 void Adapter::Xaction::abMakeMore()
 {
-  Must(receivingVb == opOn);    // a precondition for receiving more vb
-  hostx->vbMakeMore();
+    FUNCENTER();
+    Must(receivingVb == opOn);    // a precondition for receiving more vb
+    hostx->vbMakeMore();
 }
 
 void Adapter::Xaction::abStopMaking()
 {
-  sendingAb = opComplete;
-  // we may still continue receiving
+    FUNCENTER();
+    sendingAb = opComplete;
+    stopVb();
 }
 
 libecap::Area Adapter::Xaction::abContent(size_type offset, size_type size)
 {
-  // required to not raise an exception on the final call with opComplete
-  Must(sendingAb == opOn || sendingAb == opComplete);
+    size_type sz;
 
-  // if complete, there is nothing more to return.
-  if (sendingAb == opComplete) {
-    return libecap::Area::FromTempString("");
-  }
-#if 0
-  offset = gzipContext->sendingOffset + offset;
-  size = gzipContext->compressedSize - offset;
+    // required to not raise an exception on the final call with opComplete
+    Must(sendingAb == opOn || sendingAb == opComplete);
 
-  return libecap::Area::FromTempBuffer((const char *) &gzipContext->
-    gzipBuffer[offset], size);
-#endif
-  return libecap::Area::FromTempBuffer(clamdContext->buf,
-    clamdContext->bufsize);
+    // finished receiving?
+    if (receivingVb == opComplete) {
+        sz = sizeof(Ctx->buf); // use the whole buffer
+        trickled = false;
+
+        // finished sending?
+        if (processed >= received) {
+            sendingAb = opComplete;
+            hostx->noteAbContentDone(true);
+        }
+    } else {
+        sz = 10; // TODO: make config option
+    }
+
+
+    // if complete, there is nothing more to return.
+    if (sendingAb == opComplete || trickled) {
+        trickled = false;
+        return libecap::Area::FromTempString("");
+    }
+
+    lseek(Ctx->tempfd, processed, SEEK_SET);
+
+    if (-1 == (sz = read(Ctx->tempfd, Ctx->buf,  sz))) {
+        ERR << "can't read from temp file: " << strerror(errno) << endl;
+        Ctx->state = stError;
+        return libecap::Area::FromTempString("");
+    }
+
+    DBG << " sending " << sz << endl;
+    trickled = true;
+    lastContent = time(NULL);
+    return libecap::Area::FromTempBuffer(Ctx->buf, sz);
 }
 
 void Adapter::Xaction::abContentShift(size_type size)
 {
-  Must(sendingAb == opOn);
-#if 0
-  gzipContext->sendingOffset += size;
-  hostx->vbContentShift(gzipContext->lastChunkSize);
-#endif
+    Must(sendingAb == opOn);
+    processed += size;
+    DBG << "got: " << size << ", processed so far: " << processed << "/" << received << " bytes\n";
 }
 
+// finished reading the virgin body
 void Adapter::Xaction::noteVbContentDone(bool atEnd)
 {
-  Must(clamdContext);
-  Must(receivingVb == opOn);
-  
-  receivingVb = opComplete;
+    FUNCENTER();
+    Must(Ctx);
+    Must(receivingVb == opOn);
 
-  if (sendingAb == opOn) {
-    hostx->noteAbContentDone(atEnd);
-    sendingAb = opComplete;
-  }
+    receivingVb = opComplete;
 
-  clamdFinalize();
+    avStart();
+    while (-2 == avReadResponse())
+        ;
+
+    hostx->noteAbContentAvailable();
+}
+
+void Adapter::Xaction::processContent()
+{
+    time_t now = time(NULL);
+
+    FUNCENTER();
+
+    if (now < (startTime + TRICKLE_TIME)) {
+        /* */
+    } else if (now < (lastContent + TRICKLE_TIME)) {
+        /* */
+    } else {
+        hostx->noteAbContentAvailable();
+    }
 }
 
 void Adapter::Xaction::noteVbContentAvailable()
 {
-  Must(receivingVb == opOn);
-  Must(clamdContext);
+    FUNCENTER();
+    Must(receivingVb == opOn);
+    Must(Ctx);
+    Must(Ctx->tempfd != -1);
 
-  // get all virgin body
-  const libecap::Area vb = hostx->vbContent(0, libecap::nsize);
-#if 0
-  // calculate original byte size for GZIP footer
-  gzipContext->originalSize += vb.size;
+    // get all virgin body
+    const libecap::Area vb = hostx->vbContent(0, libecap::nsize);
 
-  // store chunk size for contentShift()
-  gzipContext->lastChunkSize = vb.size;
+    if (sendingAb == opUndecided) {
+        if (mustScan(vb)) {
+            openTempfile();
+            hostx->useAdapted(adapted);
+        } else {
+            // nothing to do, just send the vb
+            hostx->useVirgin();
+            abDiscard();
+            return;
+        }
+    }
 
-  // calculate CRC32 for GZIP footer
-  gzipContext->checksum =
-    crc32(gzipContext->checksum, (Bytef *) vb.start, vb.size);
+    lseek(Ctx->tempfd, 0, SEEK_END);
 
-  // (re)allocate the gzipBuffer
-  gzipContext->gzipBuffer =
-    (unsigned char *) realloc(gzipContext->gzipBuffer,
-    256 + gzipContext->originalSize);
+    // write body to temp file
+    if (-1 == write(Ctx->tempfd, vb.start, vb.size)) {
+        cerr << "can't write to temp file\n";
+        Ctx->state = stError;
+        return;
+    }
 
-  // if this is the first content chunk, add the gzip header
-  if (gzipContext->originalSize == vb.size) {
-    gzipContext->gzipBuffer[0] = (unsigned char) 31;    //      Magic number #1
-    gzipContext->gzipBuffer[1] = (unsigned char) 139;   //      Magic number #2
-    gzipContext->gzipBuffer[2] = (unsigned char) Z_DEFLATED;    //      Method
-    gzipContext->gzipBuffer[3] = (unsigned char) 0;     //      Flags
-    gzipContext->gzipBuffer[4] = (unsigned char) 0;     //      Mtime #1
-    gzipContext->gzipBuffer[5] = (unsigned char) 0;     //      Mtime #2
-    gzipContext->gzipBuffer[6] = (unsigned char) 0;     //      Mtime #3
-    gzipContext->gzipBuffer[7] = (unsigned char) 0;     //      Mtime #4
-    gzipContext->gzipBuffer[8] = (unsigned char) 0;     //      Extra flags
-    gzipContext->gzipBuffer[9] = (unsigned char) 3;     //      Operatin system: UNIX
+    received += vb.size;
 
-    gzipContext->compressedSize = 10;
-  }
+    // we have a copy; do not need vb any more
+    hostx->vbContentShift(vb.size);
 
-  gzipContext->zstream.next_in = (Bytef *) vb.start;
-  gzipContext->zstream.avail_in = vb.size;
-  gzipContext->zstream.next_out =
-    (Bytef *) & gzipContext->gzipBuffer[gzipContext->compressedSize];
-  gzipContext->zstream.avail_out =
-    256 + gzipContext->originalSize - gzipContext->compressedSize;
-  gzipContext->zstream.total_out = 0;
-
-  int rc = deflate(&gzipContext->zstream, Z_SYNC_FLUSH);
-
-  gzipContext->compressedSize += gzipContext->zstream.total_out;
-#endif
-
-  if (sendingAb == opOn) {
-    hostx->noteAbContentAvailable();
-  }
+    if (sendingAb == opOn)
+        processContent();
 }
 
 bool Adapter::Xaction::callable() const
 {
-  return hostx != 0;            // no point to call us if we are done
+    FUNCENTER();
+    return hostx != 0;            // no point to call us if we are done
+}
+
+// tells the host that we are not interested in [more] vb
+// if the host does not know that already
+void Adapter::Xaction::stopVb()
+{
+    FUNCENTER();
+    if (receivingVb == opOn) {
+        hostx->vbStopMaking();
+        receivingVb = opComplete;
+    } else {
+        // we already got the entire body or refused it earlier
+        Must(receivingVb != opUndecided);
+    }
 }
 
 // this method is used to make the last call to hostx transaction
@@ -533,12 +685,13 @@ bool Adapter::Xaction::callable() const
 // TODO: replace with hostx-independent "done" method
 libecap::host::Xaction * Adapter::Xaction::lastHostCall()
 {
-  libecap::host::Xaction * x = hostx;
-  Must(x);
-  hostx = 0;
-  return x;
+    FUNCENTER();
+    libecap::host::Xaction * x = hostx;
+    Must(x);
+    hostx = 0;
+    return x;
 }
 
 // create the adapter and register with libecap to reach the host application
 static const bool Registered =
-  (libecap::RegisterService(new Adapter::Service), true);
+    (libecap::RegisterService(new Adapter::Service), true);
