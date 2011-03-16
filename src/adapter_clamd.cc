@@ -43,10 +43,13 @@
 #include <libecap/adapter/service.h>
 #include <libecap/adapter/xaction.h>
 #include <libecap/host/xaction.h>
+#include <magic.h>
 
 using namespace std;
 
 const char *socketpath = "/tmp/clamd.sock";
+const char *magicdb = "/usr/share/misc/magic.mgc";
+const char *configfile = "/etc/squid/squidav.conf";
 
 #define FUNCENTER() // cerr << "==> " << __FUNCTION__ << endl
 #define DBG cerr << __FUNCTION__ << ", "
@@ -54,7 +57,7 @@ const char *socketpath = "/tmp/clamd.sock";
 #define TIMEOUT 5
 #define ERR cerr << __FUNCTION__ << ", "
 
-#define TRICKLE_TIME 30	// start trickling after 30 seconds
+#define TRICKLE_TIME 10	// start trickling after 30 seconds
 
 namespace Adapter
 {                               // not required, but adds clarity
@@ -92,18 +95,16 @@ public:
 
     int trickle_time; // the time to wait before trickling
     std::string socketpath;
+    magic_t mcookie;
 };
 
 class Xaction:public libecap::adapter::Xaction
 {
 public:
-#ifdef V003
-    Xaction(libecap::host::Xaction * x);
-    virtual ~ Xaction();
-#else
     Xaction(libecap::shared_ptr<Service> s, libecap::host::Xaction *x);
     virtual ~ Xaction();
 
+#ifndef V003
     // meta-information for the host transaction
     virtual const libecap::Area option(const libecap::Name &name) const;
     virtual void visitEachOption(libecap::NamedValueVisitor &visitor) const;
@@ -135,9 +136,7 @@ protected:
     libecap::host::Xaction * lastHostCall();      // clears hostx
 
 private:
-#ifndef V003
-    libecap::shared_ptr<const Service> service; // configuration access
-#endif
+    libecap::shared_ptr<const Service> service; // magic database access
     libecap::host::Xaction * hostx;       // Host transaction rep
     libecap::shared_ptr <libecap::Message> adapted;
     typedef enum { opUndecided, opOn, opComplete, opNever } OperationState;
@@ -181,18 +180,20 @@ private:
  */
 bool Adapter::Xaction::mustScan(libecap::Area area)
 {
-    ERR << "Placebo alert! Place file detection code here! area.size " << area.size << " area.start[0] " << area.start[0] << endl;
     if (area.size) {
-        if (area.start[0] == '<')
-            return false;
-        else
-            return true;
+        const char *mimetype = magic_buffer(service->mcookie, area.start, area.size);
+	if (mimetype) {
+	    DBG << mimetype << endl;
+	    //
+	    return false;
+	}
     }
     return true;
 }
 
 void Adapter::Xaction::guessMode(void)
 {
+
 }
 
 static int doconnect(void)
@@ -383,13 +384,23 @@ void Adapter::Service::start()
 {
     FUNCENTER();
     libecap::adapter::Service::start();
-    // custom code would go here, but this service does not have one
+
+    if (!(mcookie = magic_open(MAGIC_MIME_TYPE))) {
+        ERR << "can't initialize magic library" << endl;
+    } else if (-1 == magic_load(mcookie, magicdb)) {
+        ERR << "can't initialize magic database" << endl;
+        magic_close(mcookie);
+        mcookie = NULL;
+    }
 }
 
 void Adapter::Service::stop()
 {
     FUNCENTER();
-    // custom code would go here, but this service does not have one
+
+    if (mcookie)
+        magic_close(mcookie);
+
     libecap::adapter::Service::stop();
 }
 
@@ -410,18 +421,10 @@ libecap::adapter::Xaction *
 Adapter::Service::makeXaction(libecap::host::Xaction * hostx)
 {
     FUNCENTER();
-#ifdef V003
-    return new Adapter::Xaction(hostx);
-#else
     return new Adapter::Xaction(std::tr1::static_pointer_cast<Service>(self), hostx);
-#endif
 }
 
-#ifdef V003
-Adapter::Xaction::Xaction(libecap::host::Xaction * x):hostx(x),
-#else
 Adapter::Xaction::Xaction(libecap::shared_ptr < Service > aService, libecap::host::Xaction * x):service(aService), hostx(x),
-#endif
     receivingVb(opUndecided),
     sendingAb(opUndecided)
 {
@@ -552,13 +555,12 @@ libecap::Area Adapter::Xaction::abContent(size_type offset, size_type size)
 
     // Error?
     if (Ctx->state == stError && !processed) {
-      ERR << "should send an errorpage!" << endl;
-      stopVb();
-      sendingAb = opComplete;
-      hostx->noteAbContentDone(true);
-      return libecap::Area::FromTempString("Error");
+        ERR << "should send an errorpage!" << endl;
+        stopVb();
+        sendingAb = opComplete;
+        return libecap::Area::FromTempString("Error");
     }
-    
+
     // finished receiving?
     if (receivingVb == opComplete) {
         sz = sizeof(Ctx->buf); // use the whole buffer
@@ -588,7 +590,6 @@ libecap::Area Adapter::Xaction::abContent(size_type offset, size_type size)
         return libecap::Area::FromTempString("");
     }
 
-    DBG << " sending " << sz << endl;
     trickled = true;
     lastContent = time(NULL);
     return libecap::Area::FromTempBuffer(Ctx->buf, sz);
@@ -598,7 +599,6 @@ void Adapter::Xaction::abContentShift(size_type size)
 {
     Must(sendingAb == opOn);
     processed += size;
-    DBG << "got: " << size << ", processed so far: " << processed << "/" << received << " bytes\n";
 }
 
 // finished reading the virgin body
@@ -612,8 +612,8 @@ void Adapter::Xaction::noteVbContentDone(bool atEnd)
 
     avStart();
     if (Ctx->state == stOK) {
-      while (-2 == avReadResponse())
-        ;
+        while (-2 == avReadResponse())
+            ;
     }
     hostx->noteAbContentAvailable();
 }
