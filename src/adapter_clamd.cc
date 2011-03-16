@@ -43,13 +43,16 @@
 #include <libecap/adapter/service.h>
 #include <libecap/adapter/xaction.h>
 #include <libecap/host/xaction.h>
+#include <libecap/host/host.h>
 #include <magic.h>
 
 using namespace std;
 
-const char *socketpath = "/tmp/clamd.sock";
-const char *magicdb = "/usr/share/misc/magic.mgc";
-const char *configfile = "/etc/squid/squidav.conf";
+static const char *socketpath = "/tmp/clamd.sock";
+static const char *magicdb = "/usr/share/misc/magic.mgc";
+static const char *configfile = "/etc/squid/squidav.conf";
+static const char *description = "Securepoint eCAP antivirus adapter";
+
 
 #define FUNCENTER() // cerr << "==> " << __FUNCTION__ << endl
 #define DBG cerr << __FUNCTION__ << ", "
@@ -139,7 +142,8 @@ private:
     libecap::shared_ptr<const Service> service; // magic database access
     libecap::host::Xaction * hostx;       // Host transaction rep
     libecap::shared_ptr <libecap::Message> adapted;
-    typedef enum { opUndecided, opOn, opComplete, opNever } OperationState;
+
+    typedef enum { opUndecided, opWaiting, opOn, opComplete, opNever } OperationState;
     typedef enum { opBuffered, opTrickle, opViralator } OperationMode;
     typedef enum { stOK, stError, stInfected } ScanState;
 
@@ -158,13 +162,14 @@ private:
 
     void openTempfile(void);
 
-    void sendErrorPage(void);
+    libecap::Area ErrorPage(void);
     void avStart(void);
     void processContent(void);
     int avReadResponse(void);
     int avWriteCommand(const char *command);
     void guessMode(void);
     bool mustScan(libecap::Area area);
+    void noteContentAvailable(void);
 
     size_type received;
     size_type processed;
@@ -172,6 +177,7 @@ private:
     time_t startTime;
     time_t lastContent;
     bool trickled;
+    bool senderror;
 };
 } // namespace Adapter
 
@@ -182,18 +188,17 @@ bool Adapter::Xaction::mustScan(libecap::Area area)
 {
     if (area.size) {
         const char *mimetype = magic_buffer(service->mcookie, area.start, area.size);
-	if (mimetype) {
-	    DBG << mimetype << endl;
-	    //
-	    return false;
-	}
+        if (mimetype) {
+            DBG << mimetype << endl;
+            return true;
+        }
     }
     return true;
 }
 
 void Adapter::Xaction::guessMode(void)
 {
-
+    ERR << "placebo alert!" << endl;
 }
 
 static int doconnect(void)
@@ -218,8 +223,20 @@ static int doconnect(void)
     return sockfd;
 }
 
-void Adapter::Xaction::sendErrorPage(void)
+libecap::Area Adapter::Xaction::ErrorPage(void)
 {
+    std::string errmsg = "<html><head></head><body>";
+
+    if (Ctx->state == stInfected) {
+        errmsg += "<h1>Access denied!</h1>";
+        errmsg += "Virus infected content found. ";
+    } else {
+        errmsg += "<h1>Internal error!</h1>";
+        errmsg += "While scanning your request for virus infection an internal error occured!";
+    }
+    // errmsg += msg;
+    errmsg += "</body></html>\n";
+    return libecap::Area::FromTempString(errmsg);
 }
 
 void Adapter::Xaction::openTempfile(void)
@@ -297,6 +314,20 @@ int Adapter::Xaction::avReadResponse(void)
     } else if (-1 == (n = read(Ctx->sockfd, buf, sizeof(buf)))) {
         ERR << "read: " << strerror(errno) << endl;
     } else {
+        if(n > 7) {
+            char *colon = strrchr(buf, ':');
+            char *eol = buf + n;
+            if(!colon) {
+                Ctx->state = stError;
+            } else if(!memcmp(eol - 7, " FOUND", 6)) {
+                Ctx->state = stInfected;
+                DBG << "infected" << endl;
+            } else if(!memcmp(eol - 7, " ERROR", 6)) {
+                Ctx->state = stError;
+            } else {
+                DBG << "nix" << endl;
+            }
+        }
         DBG << buf << endl;
         return n;
     }
@@ -357,7 +388,7 @@ std::string Adapter::Service::tag() const
 void Adapter::Service::describe(std::ostream & os) const
 {
     FUNCENTER();
-    os << "Securepoint eCAP antivirus adapter";
+    os << description;
 }
 
 #ifdef V003
@@ -429,7 +460,7 @@ Adapter::Xaction::Xaction(libecap::shared_ptr < Service > aService, libecap::hos
     sendingAb(opUndecided)
 {
     received = processed = 0;
-    trickled = false;
+    trickled = senderror = false;
 }
 
 Adapter::Xaction::~Xaction()
@@ -466,41 +497,15 @@ void Adapter::Xaction::start()
     Ctx = 0;
 
     Must(hostx);
+    
     if (hostx->virgin().body()) {
         receivingVb = opOn;
         hostx->vbMake();            // ask host to supply virgin body
-    } else {
-        receivingVb = opNever;
-    }
-
-    adapted = hostx->virgin().clone();
-    Must(adapted != 0);
-
-    // try to read the Content-Length header
-    if (adapted->header().hasAny(libecap::headerContentLength)) {
-        const libecap::Header::Value value =
-            adapted->header().value(libecap::headerContentLength);
-        if (value.size > 0) {
-            contentlength = strtol(value.start, NULL, 10);
-            cerr << "Content-Length: " << value.start << endl;
-        }
-    }
-
-    // Add informational response header
-    static const libecap::Name name("X-Ecap");
-    const libecap::Header::Value value =
-        libecap::Area::FromTempString("Securepoint eCAP clamd Adapter");
-    adapted->header().add(name, value);
-
-    if (!adapted->body()) {
-        cerr << "Xaction::start: Nothing to send here!" << endl;
-        sendingAb = opNever;        // there is nothing to send
-        lastHostCall()->useAdapted(adapted);
-    } else {
-        // remember to delete the ContentLength header if are in viralator mode
         Ctx = (struct Ctx *)calloc(1, sizeof(struct Ctx));
         startTime = time(NULL);
-        adapted->header().removeAny(libecap::headerContentLength);
+    } else {
+	hostx->useVirgin();
+        receivingVb = opNever;
     }
 }
 
@@ -523,8 +528,8 @@ void Adapter::Xaction::abDiscard()
 void Adapter::Xaction::abMake()
 {
     FUNCENTER();
-    Must(sendingAb == opUndecided);       // have not yet started or decided not to send
-    Must(hostx->virgin().body());		// that is our only source of ab content
+    Must(sendingAb == opWaiting);       // have not yet started
+    Must(hostx->virgin().body());	// that is our only source of ab content
 
     // we are or were receiving vb
     Must(receivingVb == opOn || receivingVb == opComplete);
@@ -549,16 +554,18 @@ void Adapter::Xaction::abStopMaking()
 libecap::Area Adapter::Xaction::abContent(size_type offset, size_type size)
 {
     size_type sz;
+    FUNCENTER();
 
     // required to not raise an exception on the final call with opComplete
     Must(sendingAb == opOn || sendingAb == opComplete);
 
     // Error?
-    if (Ctx->state == stError && !processed) {
-        ERR << "should send an errorpage!" << endl;
+    if (Ctx->state != stOK) {
         stopVb();
         sendingAb = opComplete;
-        return libecap::Area::FromTempString("Error");
+        // Nothing written so far. We can send an error message!
+        if (senderror)
+            return ErrorPage();
     }
 
     // finished receiving?
@@ -574,7 +581,6 @@ libecap::Area Adapter::Xaction::abContent(size_type offset, size_type size)
     } else {
         sz = 10; // TODO: make config option
     }
-
 
     // if complete, there is nothing more to return.
     if (sendingAb == opComplete || trickled) {
@@ -601,6 +607,43 @@ void Adapter::Xaction::abContentShift(size_type size)
     processed += size;
 }
 
+void Adapter::Xaction::noteContentAvailable()
+{
+    FUNCENTER();
+
+    if (sendingAb == opWaiting) {
+        adapted = hostx->virgin().clone();
+        Must(adapted != 0);
+
+        adapted->header().removeAny(libecap::headerContentLength);
+
+        if (Ctx->state != stOK) {
+            // last chance to indicate an error
+	    libecap::FirstLine *firstLine = &(adapted->firstLine());
+	    libecap::StatusLine *statusLine = dynamic_cast<libecap::StatusLine*>(firstLine);
+
+            const libecap::Name name("Content-Type");
+            const libecap::Header::Value value = libecap::Area::FromTempString("text/html");
+            adapted->header().removeAny(name);
+            adapted->header().add(name, value);
+
+            if (Ctx->state == stInfected)
+                statusLine->statusCode(403);
+            else
+                statusLine->statusCode(500);
+
+            senderror = true;
+        }
+
+        const libecap::Name name("X-Ecap");
+        const libecap::Header::Value value = libecap::Area::FromTempString(description);
+        adapted->header().add(name, value);
+
+        hostx->useAdapted(adapted);
+    }
+    hostx->noteAbContentAvailable();
+}
+
 // finished reading the virgin body
 void Adapter::Xaction::noteVbContentDone(bool atEnd)
 {
@@ -615,7 +658,7 @@ void Adapter::Xaction::noteVbContentDone(bool atEnd)
         while (-2 == avReadResponse())
             ;
     }
-    hostx->noteAbContentAvailable();
+    noteContentAvailable();
 }
 
 void Adapter::Xaction::processContent()
@@ -629,7 +672,7 @@ void Adapter::Xaction::processContent()
     } else if (now < (lastContent + TRICKLE_TIME)) {
         /* */
     } else {
-        hostx->noteAbContentAvailable();
+        noteContentAvailable();
     }
 }
 
@@ -646,7 +689,9 @@ void Adapter::Xaction::noteVbContentAvailable()
     if (sendingAb == opUndecided) {
         if (mustScan(vb)) {
             openTempfile();
-            hostx->useAdapted(adapted);
+            // go to state waiting, hostx->useAdapted() will be called later
+            // via noteContentAvailable()
+            sendingAb = opWaiting;
         } else {
             // nothing to do, just send the vb
             hostx->useVirgin();
@@ -661,7 +706,6 @@ void Adapter::Xaction::noteVbContentAvailable()
     if (-1 == write(Ctx->tempfd, vb.start, vb.size)) {
         cerr << "can't write to temp file\n";
         Ctx->state = stError;
-        return;
     }
 
     received += vb.size;
@@ -669,7 +713,7 @@ void Adapter::Xaction::noteVbContentAvailable()
     // we have a copy; do not need vb any more
     hostx->vbContentShift(vb.size);
 
-    if (sendingAb == opOn)
+    if (sendingAb == opOn || sendingAb == opWaiting)
         processContent();
 }
 
@@ -695,7 +739,6 @@ void Adapter::Xaction::stopVb()
 
 // this method is used to make the last call to hostx transaction
 // last call may delete adapter transaction if the host no longer needs it
-// TODO: replace with hostx-independent "done" method
 libecap::host::Xaction * Adapter::Xaction::lastHostCall()
 {
     FUNCENTER();
