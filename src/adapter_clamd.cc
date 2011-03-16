@@ -47,7 +47,6 @@
 using namespace std;
 
 const char *socketpath = "/tmp/clamd.sock";
-// const char *socketpath = "/var/run/clamd.scan/clamd.sock";
 
 #define FUNCENTER() // cerr << "==> " << __FUNCTION__ << endl
 #define DBG cerr << __FUNCTION__ << ", "
@@ -55,7 +54,7 @@ const char *socketpath = "/tmp/clamd.sock";
 #define TIMEOUT 5
 #define ERR cerr << __FUNCTION__ << ", "
 
-#define TRICKLE_TIME 10	// start trickling after 30 seconds
+#define TRICKLE_TIME 30	// start trickling after 30 seconds
 
 namespace Adapter
 {                               // not required, but adds clarity
@@ -92,6 +91,7 @@ public:
     virtual libecap::adapter::Xaction * makeXaction(libecap::host::Xaction * hostx);
 
     int trickle_time; // the time to wait before trickling
+    std::string socketpath;
 };
 
 class Xaction:public libecap::adapter::Xaction
@@ -159,6 +159,7 @@ private:
 
     void openTempfile(void);
 
+    void sendErrorPage(void);
     void avStart(void);
     void processContent(void);
     int avReadResponse(void);
@@ -214,6 +215,10 @@ static int doconnect(void)
         DBG << "opened clamd socket @ " << sockfd << endl;
     }
     return sockfd;
+}
+
+void Adapter::Xaction::sendErrorPage(void)
+{
 }
 
 void Adapter::Xaction::openTempfile(void)
@@ -308,8 +313,10 @@ void Adapter::Xaction::avStart(void)
 
     FUNCENTER();
 
-    if (-1 == (Ctx->sockfd = doconnect()))
+    if (-1 == (Ctx->sockfd = doconnect())) {
+        Ctx->state = stError;
         return;
+    }
 
     if (-1 == avWriteCommand("zFILDES")) {
         Ctx->state = stError;
@@ -337,7 +344,7 @@ void Adapter::Xaction::avStart(void)
 std::string Adapter::Service::uri() const
 {
     FUNCENTER();
-    return "ecap://www.securepoint.de/ecap_clamd";
+    return "ecap://www.securepoint.de/ecap_av";
 }
 
 std::string Adapter::Service::tag() const
@@ -349,7 +356,7 @@ std::string Adapter::Service::tag() const
 void Adapter::Service::describe(std::ostream & os) const
 {
     FUNCENTER();
-    os << "clamd eCAP adapter";
+    os << "Securepoint eCAP antivirus adapter";
 }
 
 #ifdef V003
@@ -375,11 +382,7 @@ void Adapter::Service::reconfigure(const libecap::Options &cfg)
 void Adapter::Service::start()
 {
     FUNCENTER();
-    char *test;
     libecap::adapter::Service::start();
-
-    if ((test = getenv("TRICKLE_TIME")))
-        cerr << __FUNCTION__ << " " << test << endl;
     // custom code would go here, but this service does not have one
 }
 
@@ -547,6 +550,15 @@ libecap::Area Adapter::Xaction::abContent(size_type offset, size_type size)
     // required to not raise an exception on the final call with opComplete
     Must(sendingAb == opOn || sendingAb == opComplete);
 
+    // Error?
+    if (Ctx->state == stError && !processed) {
+      ERR << "should send an errorpage!" << endl;
+      stopVb();
+      sendingAb = opComplete;
+      hostx->noteAbContentDone(true);
+      return libecap::Area::FromTempString("Error");
+    }
+    
     // finished receiving?
     if (receivingVb == opComplete) {
         sz = sizeof(Ctx->buf); // use the whole buffer
@@ -599,9 +611,10 @@ void Adapter::Xaction::noteVbContentDone(bool atEnd)
     receivingVb = opComplete;
 
     avStart();
-    while (-2 == avReadResponse())
+    if (Ctx->state == stOK) {
+      while (-2 == avReadResponse())
         ;
-
+    }
     hostx->noteAbContentAvailable();
 }
 
