@@ -1,5 +1,5 @@
 ADD_LIBRARY(ecap_adapter_av SHARED
-  adapter_clamd.cc
+  adapter_avscan.cc
 )
 
 FIND_PACKAGE(PkgConfig)
