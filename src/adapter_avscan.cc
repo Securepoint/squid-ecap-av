@@ -174,11 +174,12 @@ private:
     {
         int sockfd;
         int tempfd;
-        int state;
+        int status;
         char *tempfn;
         char buf[BUFSIZ];
     } *Ctx;
 
+    std::string statusString;
     void openTempfile(void);
 
     libecap::Area ErrorPage(void);
@@ -242,7 +243,6 @@ void Adapter::SkipList::add(std::string s)
         entry->preg = regex;
         entry->next = entries;
         entries = entry;
-        DBG << s << ":" << sizeof(struct skipListEntry) << endl;
         return;
     }
 
@@ -315,15 +315,14 @@ static int doconnect(void)
 libecap::Area Adapter::Xaction::ErrorPage(void)
 {
     std::string errmsg = "<html><head></head><body>";
-
-    if (Ctx->state == stInfected) {
+    if (Ctx->status == stInfected) {
         errmsg += "<h1>Access denied!</h1>";
-        errmsg += "Virus infected content found. ";
+        errmsg += "You've tried to upload/download a file that contains the virus <b>";
+        errmsg += "<b>" + statusString + "</b>.";
     } else {
         errmsg += "<h1>Internal error!</h1>";
         errmsg += "While scanning your request for virus infection an internal error occured!";
     }
-    // errmsg += msg;
     errmsg += "</body></html>\n";
     return libecap::Area::FromTempString(errmsg);
 }
@@ -336,7 +335,7 @@ void Adapter::Xaction::openTempfile(void)
     mkstemp(fn);
     if (-1 == (Ctx->tempfd = open(fn, O_RDWR))) {
         ERR << "can't open temp file " << fn << endl;
-        Ctx->state = stError;
+        Ctx->status = stError;
         return;
     }
     DBG << "opened temp file " << fn << endl;
@@ -407,12 +406,14 @@ int Adapter::Xaction::avReadResponse(void)
             char *colon = strrchr(buf, ':');
             char *eol = buf + n;
             if(!colon) {
-                Ctx->state = stError;
+                Ctx->status = stError;
             } else if(!memcmp(eol - 7, " FOUND", 6)) {
-                Ctx->state = stInfected;
+                Ctx->status = stInfected;
+                statusString = ++colon;
+                statusString.resize(statusString.size() - 6);
                 DBG << "infected" << endl;
             } else if(!memcmp(eol - 7, " ERROR", 6)) {
-                Ctx->state = stError;
+                Ctx->status = stError;
             } else {
                 DBG << "nix" << endl;
             }
@@ -435,12 +436,12 @@ void Adapter::Xaction::avStart(void)
     FUNCENTER();
 
     if (-1 == (Ctx->sockfd = doconnect())) {
-        Ctx->state = stError;
+        Ctx->status = stError;
         return;
     }
 
     if (-1 == avWriteCommand("zFILDES")) {
-        Ctx->state = stError;
+        Ctx->status = stError;
         return;
     }
 
@@ -458,7 +459,7 @@ void Adapter::Xaction::avStart(void)
     *(int *)CMSG_DATA(cmsg) = Ctx->tempfd;
     if(sendmsg(Ctx->sockfd, &msg, 0) == -1) {
         ERR << "FD send failed: " << strerror(errno) << endl;
-        Ctx->state = stError;
+        Ctx->status = stError;
     }
 }
 
@@ -652,7 +653,7 @@ libecap::Area Adapter::Xaction::abContent(size_type offset, size_type size)
     Must(sendingAb == opOn || sendingAb == opComplete);
 
     // Error?
-    if (Ctx->state != stOK) {
+    if (Ctx->status != stOK) {
         stopVb();
         sendingAb = opComplete;
         // Nothing written so far. We can send an error message!
@@ -684,7 +685,7 @@ libecap::Area Adapter::Xaction::abContent(size_type offset, size_type size)
 
     if (-1 == (sz = read(Ctx->tempfd, Ctx->buf,  sz))) {
         ERR << "can't read from temp file: " << strerror(errno) << endl;
-        Ctx->state = stError;
+        Ctx->status = stError;
         return libecap::Area::FromTempString("");
     }
 
@@ -709,7 +710,7 @@ void Adapter::Xaction::noteContentAvailable()
 
         adapted->header().removeAny(libecap::headerContentLength);
 
-        if (Ctx->state != stOK) {
+        if (Ctx->status != stOK) {
             // last chance to indicate an error
             libecap::FirstLine *firstLine = &(adapted->firstLine());
             libecap::StatusLine *statusLine = dynamic_cast<libecap::StatusLine*>(firstLine);
@@ -720,7 +721,7 @@ void Adapter::Xaction::noteContentAvailable()
             adapted->header().add(name, value);
 
             if (statusLine)
-                statusLine->statusCode(Ctx->state == stInfected ? 403 : 500);
+                statusLine->statusCode(Ctx->status == stInfected ? 403 : 500);
 
             senderror = true;
         }
@@ -744,7 +745,7 @@ void Adapter::Xaction::noteVbContentDone(bool atEnd)
     receivingVb = opComplete;
 
     avStart();
-    if (Ctx->state == stOK) {
+    if (Ctx->status == stOK) {
         while (-2 == avReadResponse())
             ;
     }
@@ -795,7 +796,7 @@ void Adapter::Xaction::noteVbContentAvailable()
     // write body to temp file
     if (-1 == write(Ctx->tempfd, vb.start, vb.size)) {
         cerr << "can't write to temp file\n";
-        Ctx->state = stError;
+        Ctx->status = stError;
     }
 
     received += vb.size;
