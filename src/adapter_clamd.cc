@@ -31,7 +31,9 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <regex.h>
 #include <fcntl.h>
+#include <fstream>
 #include <iostream>
 #include <string>
 #include <cerrno>
@@ -48,17 +50,16 @@
 
 using namespace std;
 
-static const char *socketpath = "/tmp/clamd.sock";
-static const char *magicdb = "/usr/share/misc/magic.mgc";
-static const char *configfile = "/etc/squid/squidav.conf";
+static const char *socketpath  = "/tmp/clamd.sock";
+static const char *magicdb     = "/usr/share/misc/magic.mgc";
+static const char *skiplist    = "/etc/squid/avscanskip.conf";
 static const char *description = "Securepoint eCAP antivirus adapter";
 
-
 #define FUNCENTER() // cerr << "==> " << __FUNCTION__ << endl
-#define DBG cerr << __FUNCTION__ << ", "
+#define DBG cerr << __FUNCTION__ << "(), "
 
 #define TIMEOUT 5
-#define ERR cerr << __FUNCTION__ << ", "
+#define ERR cerr << __FUNCTION__ << "(), "
 
 #define TRICKLE_TIME 10	// start trickling after 30 seconds
 
@@ -67,6 +68,22 @@ namespace Adapter
 
 using libecap::size_type;
 using libecap::StatusLine;
+
+class SkipList
+{
+public:
+    SkipList(const char *aPath);
+    virtual ~SkipList();
+    bool match(const char *expr);
+    bool ready();
+private:
+    void add(std::string s);
+    struct skipListEntry {
+        std::string expr;
+        regex_t *preg;
+        struct skipListEntry *next;
+    } *entries;
+};
 
 class Service:public libecap::adapter::Service
 {
@@ -96,9 +113,11 @@ public:
     // Work
     virtual libecap::adapter::Xaction * makeXaction(libecap::host::Xaction * hostx);
 
+    // Config
+    SkipList *skipList;
     int trickle_time; // the time to wait before trickling
-    std::string socketpath;
-    magic_t mcookie;
+    magic_t mcookie;  // magic cookie
+
 };
 
 class Xaction:public libecap::adapter::Xaction
@@ -181,16 +200,86 @@ private:
 };
 } // namespace Adapter
 
+Adapter::SkipList::SkipList(const char *aPath)
+{
+    FUNCENTER();
+    Must(aPath);
+    entries = 0;
+
+    std::string line;
+    ifstream in(aPath);
+    if (in.is_open()) {
+        while (getline (in, line))
+            add(line);
+        in.close();
+    } else {
+        ERR << "can't open " << aPath << endl;
+    }
+}
+
+Adapter::SkipList::~SkipList()
+{
+    ERR << "placebo alert!" << endl;
+}
+
+void Adapter::SkipList::add(std::string s)
+{
+    regex_t *regex = NULL;
+    struct skipListEntry *entry;
+
+    if (std::string::npos == s.find_first_not_of(" \t\r\n")) {
+        /* */
+    } else if (s.at(0) == '#') {
+        /* */
+    } else if (!(regex = new regex_t)) {
+        /* */
+    } else if (0 != regcomp(regex, s.c_str(), REG_EXTENDED | REG_NOSUB)) {
+        /* */
+    } else if (!(entry = new (struct skipListEntry))) {
+        /* */
+    } else {
+        entry->expr = s;
+        entry->preg = regex;
+        entry->next = entries;
+        entries = entry;
+        DBG << s << ":" << sizeof(struct skipListEntry) << endl;
+        return;
+    }
+
+    delete(regex);
+}
+
+bool Adapter::SkipList::ready(void)
+{
+    FUNCENTER();
+    return entries != 0;
+}
+
+bool Adapter::SkipList::match(const char *expr)
+{
+    FUNCENTER();
+    struct skipListEntry *e = entries;
+    while (e) {
+        if (0 == regexec(e->preg, expr, 0, 0, 0)) {
+            DBG << "matched: <" << expr << ">::<" << e->expr << ">" << endl;
+            return true;
+        }
+        e = e->next;
+    }
+    return false;
+}
+
 /**
  * Determines if we should scan or not.
  */
 bool Adapter::Xaction::mustScan(libecap::Area area)
 {
-    if (area.size) {
+    FUNCENTER();
+    if (area.size && service->skipList->ready()) {
         const char *mimetype = magic_buffer(service->mcookie, area.start, area.size);
         if (mimetype) {
-            DBG << mimetype << endl;
-            return true;
+            if (service->skipList->match(mimetype))
+                return false;
         }
     }
     return true;
@@ -423,6 +512,7 @@ void Adapter::Service::start()
         magic_close(mcookie);
         mcookie = NULL;
     }
+    skipList = new Adapter::SkipList(skiplist);
 }
 
 void Adapter::Service::stop()
@@ -431,6 +521,8 @@ void Adapter::Service::stop()
 
     if (mcookie)
         magic_close(mcookie);
+    if (skipList)
+        delete(skipList);
 
     libecap::adapter::Service::stop();
 }
@@ -497,14 +589,14 @@ void Adapter::Xaction::start()
     Ctx = 0;
 
     Must(hostx);
-    
+
     if (hostx->virgin().body()) {
         receivingVb = opOn;
         hostx->vbMake();            // ask host to supply virgin body
         Ctx = (struct Ctx *)calloc(1, sizeof(struct Ctx));
         startTime = time(NULL);
     } else {
-	hostx->useVirgin();
+        hostx->useVirgin();
         receivingVb = opNever;
     }
 }
@@ -619,18 +711,16 @@ void Adapter::Xaction::noteContentAvailable()
 
         if (Ctx->state != stOK) {
             // last chance to indicate an error
-	    libecap::FirstLine *firstLine = &(adapted->firstLine());
-	    libecap::StatusLine *statusLine = dynamic_cast<libecap::StatusLine*>(firstLine);
+            libecap::FirstLine *firstLine = &(adapted->firstLine());
+            libecap::StatusLine *statusLine = dynamic_cast<libecap::StatusLine*>(firstLine);
 
             const libecap::Name name("Content-Type");
             const libecap::Header::Value value = libecap::Area::FromTempString("text/html");
             adapted->header().removeAny(name);
             adapted->header().add(name, value);
 
-            if (Ctx->state == stInfected)
-                statusLine->statusCode(403);
-            else
-                statusLine->statusCode(500);
+            if (statusLine)
+                statusLine->statusCode(Ctx->state == stInfected ? 403 : 500);
 
             senderror = true;
         }
