@@ -1,0 +1,101 @@
+Securepoint eCAP antivirus adapter
+==================================
+
+About
+-----
+
+Securepoint eCAP antivirus adapter is an loadable eCAP adapter for the
+popular Squid HTTP-Proxy which allows you to scan all traffic going through
+for known viruses. Currently the only supported virus scan engine is clamav.
+
+Development of this adapter started in 2011-03 because nothing comparable
+could be found at this time. In the meantime (2011-03-17) at least one similar
+project exists. You can find it http://www.e-cap.org/Downloads[here].
+
+Features
+~~~~~~~~
+
+* content type detection via libmagic
+* configurable skiplist dependent of the detected content type
+* data trickling
+* patience pages
+
+==============================================================================
+eCAP support was introduced with SQUID version *3.1.*. You cannot use the
+Securepoint eCAP antivirus adapter with earlier versions of SQUID.
+==============================================================================
+
+Installation
+------------
+
+Download and install libecap
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.Download and unpack:
+------------------------------------------------------------------------------
+wget http://www.measurement-factory.com/tmp/ecap/libecap-0.0.3.tar.gz
+tar xf libecap-0.0.3.tar.gz
+------------------------------------------------------------------------------
+
+.Build and install:
+------------------------------------------------------------------------------
+cd libecap-0.0.3/
+./configure
+make
+make install
+------------------------------------------------------------------------------
+
+Download and install Securepoint eCAP antivirus adapter
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+In addition to libecap, libmagic is required to build the Securepoint eCAP
+antivirus adapter. Any modern Linux should have it installed allready because
+its part of the http://www.darwinsys.com/file/[file] package. Anyhow, you have
+to install the development headers too. On Fedore this is done by typing:
+
+------------------------------------------------------------------------------
+yum install file-devel
+------------------------------------------------------------------------------
+
+.Download and unpack:
+------------------------------------------------------------------------------
+tar xf squid-ecap-av-1.0.0.tar.bz2
+------------------------------------------------------------------------------
+
+.Build and install:
+------------------------------------------------------------------------------
+mkdir squid-ecap-av-1.0.0/build
+cd squid-ecap-av-1.0.0/build
+cmake ..
+make
+make MODDIR=/usr/lib/squid install
+------------------------------------------------------------------------------
+
+Usage
+-----
+
+Add the following lines to your /etc/squid/squid.conf:
+
+------------------------------------------------------------------------------
+acl HTTP_STATUS_OK http_status 200
+loadable_modules /usr/lib/squid/ecap_adapter_av.so
+
+ecap_enable on
+ecap_service AVRESP respmod_precache bypass=0 ecap://www.securepoint.de/ecap_av
+adaptation_access AVRESP allow HTTP_STATUS_OK
+------------------------------------------------------------------------------
+
+To skip scanning of html pages and all image types add the following lines to
+/etc/squid/avscanskip.conf:
+
+------------------------------------------------------------------------------
+text/html
+image/.*
+------------------------------------------------------------------------------
+
+Testing
+-------
+
+Point your browser to go through the proxy and try to download the eicar
+Anti-Malware test file from http://www.eicar.org/download/eicar.com[here].
+
