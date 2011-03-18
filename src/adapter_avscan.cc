@@ -55,7 +55,7 @@ static const char *magicdb     = "/usr/share/misc/magic.mgc";
 static const char *skiplist    = "/etc/squid/avscanskip.conf";
 static const char *description = "Securepoint eCAP antivirus adapter";
 
-#define FUNCENTER() // cerr << "==> " << __FUNCTION__ << endl
+#define FUNCENTER() cerr << "==> " << __FUNCTION__ << endl
 #define DBG cerr << __FUNCTION__ << "(), "
 
 #define TIMEOUT 5
@@ -338,7 +338,7 @@ void Adapter::Xaction::openTempfile(void)
         Ctx->status = stError;
         return;
     }
-    DBG << "opened temp file " << fn << endl;
+    DBG << "opened temp file " << fn << " @ " << Ctx->tempfd << endl;
     Ctx->tempfn = strdup(fn);
 }
 
@@ -561,10 +561,16 @@ Adapter::Xaction::~Xaction()
     FUNCENTER();
 
     if (Ctx) {
-        close(Ctx->sockfd);
-        close(Ctx->tempfd);
-        unlink(Ctx->tempfn);
-        free(Ctx->tempfn);
+        if (-1 != Ctx->sockfd)
+            close(Ctx->sockfd);
+
+        if (-1 != Ctx->tempfd)
+            close(Ctx->tempfd);
+
+        if (Ctx->tempfn) {
+            unlink(Ctx->tempfn);
+            free(Ctx->tempfn);
+        }
         free(Ctx);
     }
 
@@ -595,6 +601,7 @@ void Adapter::Xaction::start()
         receivingVb = opOn;
         hostx->vbMake();            // ask host to supply virgin body
         Ctx = (struct Ctx *)calloc(1, sizeof(struct Ctx));
+        Ctx->tempfd = Ctx->sockfd = -1;
         startTime = time(NULL);
     } else {
         hostx->useVirgin();
@@ -772,7 +779,6 @@ void Adapter::Xaction::noteVbContentAvailable()
     FUNCENTER();
     Must(receivingVb == opOn);
     Must(Ctx);
-    Must(Ctx->tempfd != -1);
 
     // get all virgin body
     const libecap::Area vb = hostx->vbContent(0, libecap::nsize);
@@ -791,6 +797,7 @@ void Adapter::Xaction::noteVbContentAvailable()
         }
     }
 
+    Must(Ctx->tempfd != -1);
     lseek(Ctx->tempfd, 0, SEEK_END);
 
     // write body to temp file
