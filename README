@@ -8,9 +8,9 @@ Securepoint eCAP antivirus adapter is an loadable eCAP adapter for the
 popular Squid HTTP-Proxy which allows you to scan all traffic going through
 for known viruses. Currently the only supported virus scan engine is clamav.
 
-Development of this adapter started in 2011-03 because nothing comparable
+Development of this adapter started in March 2011 because nothing comparable
 could be found at this time. In the meantime (2011-03-17) at least one similar
-project exists. You can find it http://www.e-cap.org/Downloads[here].
+project exists, which you can find http://www.e-cap.org/Downloads[here].
 
 Features
 ~~~~~~~~
@@ -18,7 +18,7 @@ Features
 * content type detection via libmagic
 * configurable skiplist dependent of the detected content type
 * data trickling
-* patience pages
+* patience pages (not yet)
 
 ==============================================================================
 eCAP support was introduced with SQUID version *3.1.*. You cannot use the
@@ -49,16 +49,24 @@ Download and install Securepoint eCAP antivirus adapter
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 In addition to libecap, libmagic is required to build the Securepoint eCAP
-antivirus adapter. Any modern Linux should have it installed allready because
-its part of the http://www.darwinsys.com/file/[file] package. Anyhow, you have
-to install the development headers too. On Fedore this is done by typing:
+antivirus adapter. Any modern Linux distribution should have libmagic installed
+already because its part of the http://www.darwinsys.com/file/[file] package.
+Anyhow, you have to install the development headers too. On Fedora this
+is done by typing:
 
 ------------------------------------------------------------------------------
 yum install file-devel
 ------------------------------------------------------------------------------
 
 .Download and unpack:
+
+Project homepage is http://sourceforge.net/projects/squid-ecap-av/. If you like
+living on the bleeding edge, you can pull the working branch directly from 
+http://squid-ecap-av.git.sourceforge.net/git/gitweb.cgi?p=squid-ecap-av[
+git://squid-ecap-av.git.sourceforge.net/gitroot/squid-ecap-av/squid-ecap-av].
+
 ------------------------------------------------------------------------------
+http://sourceforge.net/projects/squid-ecap-av/
 tar xf squid-ecap-av-1.0.0.tar.bz2
 ------------------------------------------------------------------------------
 
@@ -98,4 +106,10 @@ Testing
 
 Point your browser to go through the proxy and try to download the eicar
 Anti-Malware test file from http://www.eicar.org/download/eicar.com[here].
+
+Bug reporting
+-------------
+
+Report bugs through the SourceForge.net
+http://sourceforge.net/projects/squid-ecap-av[squid-ecap-av] project page.
 
