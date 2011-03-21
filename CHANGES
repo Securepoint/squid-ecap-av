@@ -1,6 +1,11 @@
+version 1.0.2
+
+  * added missing install target
+  * close file descriptor leak
+
 version 1.0.1
-  
-  * properly initialize the file descriptors -1 to not mistakenly close fd 0
+ 
+  * properly initialize the file descriptors with -1 to not mistakenly close fd 0
 
 version 1.0.0
   

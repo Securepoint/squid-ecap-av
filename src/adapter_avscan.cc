@@ -339,8 +339,7 @@ void Adapter::Xaction::openTempfile(void)
     char fn[] = "/var/tmp/squid-ecap-XXXXXX";
     FUNCENTER();
 
-    mkstemp(fn);
-    if (-1 == (Ctx->tempfd = open(fn, O_RDWR))) {
+    if (-1 == (Ctx->tempfd = mkstemp(fn))) {
         ERR << "can't open temp file " << fn << endl;
         Ctx->status = stError;
         return;
