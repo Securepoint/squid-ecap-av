@@ -396,8 +396,7 @@ int Adapter::Xaction::avReadResponse(void)
     FD_SET(Ctx->sockfd,&rfds);
 
     if (-1 != (n = read(Ctx->sockfd, buf, sizeof(buf)))) {
-        DBG << buf << endl;
-        return n;
+        /* looks good */
     } else if (errno != EAGAIN) {
         ERR << "read: " << strerror(errno) << endl;
     } else if (-1 == select(Ctx->sockfd + 1, &rfds, NULL, NULL, &tv)) {
@@ -407,8 +406,12 @@ int Adapter::Xaction::avReadResponse(void)
         return -2;
     } else if (-1 == (n = read(Ctx->sockfd, buf, sizeof(buf)))) {
         ERR << "read: " << strerror(errno) << endl;
+    }
+
+    if (n == -1) {
+        /* */
     } else {
-        if(n > 7) {
+        if (n > 7) {
             char *colon = strrchr(buf, ':');
             char *eol = buf + n;
             if(!colon) {

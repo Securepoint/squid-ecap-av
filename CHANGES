@@ -2,6 +2,7 @@ version 1.0.2
 
   * added missing install target
   * close file descriptor leak
+  * fix avReadResponse() if first read succeeds
 
 version 1.0.1
  
