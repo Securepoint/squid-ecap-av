@@ -74,9 +74,9 @@ tar xf squid-ecap-av-1.0.1.tar.bz2
 ------------------------------------------------------------------------------
 mkdir squid-ecap-av-1.0.1/build
 cd squid-ecap-av-1.0.1/build
-cmake ..
+cmake -DCMAKE_INSTALL_PREFIX=/usr ..
 make
-make MODDIR=/usr/lib/squid install
+make install
 ------------------------------------------------------------------------------
 
 Usage
@@ -86,7 +86,7 @@ Add the following lines to your /etc/squid/squid.conf:
 
 ------------------------------------------------------------------------------
 acl HTTP_STATUS_OK http_status 200
-loadable_modules /usr/lib/squid/ecap_adapter_av.so
+loadable_modules /usr/libexec/squid/ecap_adapter_av.so
 
 ecap_enable on
 ecap_service AVRESP respmod_precache bypass=0 ecap://www.securepoint.de/ecap_av
