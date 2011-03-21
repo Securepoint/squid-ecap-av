@@ -53,7 +53,7 @@ using namespace std;
 static const char *description = "Securepoint eCAP antivirus adapter";
 static const char *configfn = "/etc/squid/ecap_adapter_av.conf";
 
-#define FUNCENTER() cerr << "==> " << __FUNCTION__ << endl
+#define FUNCENTER() // cerr << "==> " << __FUNCTION__ << endl
 #define DBG cerr << __FUNCTION__ << "(), "
 
 #define TIMEOUT 5
