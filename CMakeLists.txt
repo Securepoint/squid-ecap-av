@@ -3,6 +3,8 @@ PROJECT(squid-ecap-av CXX)
 
 SET(PACKAGE_VERSION "1.0.1")
 SET(CMAKE_CXX_FLAGS "-DPACKAGE_VERSION=\\\"${PACKAGE_VERSION}\\\"")
+SET(MODDIR "${CMAKE_INSTALL_PREFIX}/libexec/squid/" CACHE PATH "Directory to install the eCAP adapater to.")
+SET(DOCDIR "${CMAKE_INSTALL_PREFIX}/share/doc/squid-ecap-av-${PACKAGE_VERSION}" CACHE PATH "Directory to install the documentation to.")
 
 FIND_PROGRAM(ASCIIDOC NAMES asciidoc)
 IF (ASCIIDOC)
@@ -18,5 +20,7 @@ SET(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Securepoint eCAP antivirus adapter")
 SET(CPACK_SOURCE_GENERATOR "TBZ2")
 SET(CPACK_SOURCE_IGNORE_FILES "/\\.git/;\\.swp$;~$;\\.#;/#")
 INCLUDE(CPack)
+
+install(FILES CHANGES LICENSE-eCAP LICENSE.txt NOTICE README DESTINATION ${DOCDIR})
 
 add_subdirectory(src)
