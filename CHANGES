@@ -1,3 +1,7 @@
+version 1.0.3
+
+  * implemented some config options (via an own config file)
+
 version 1.0.2
 
   * added missing install target

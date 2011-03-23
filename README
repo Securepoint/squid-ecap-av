@@ -66,13 +66,13 @@ http://squid-ecap-av.git.sourceforge.net/git/gitweb.cgi?p=squid-ecap-av[
 git://squid-ecap-av.git.sourceforge.net/gitroot/squid-ecap-av/squid-ecap-av].
 
 ------------------------------------------------------------------------------
-wget http://downloads.sourceforge.net/project/squid-ecap-av/1.x.x/squid-ecap-av-1.0.1.tar.bz2
-tar xf squid-ecap-av-1.0.1.tar.bz2
+wget http://downloads.sourceforge.net/project/squid-ecap-av/1.x.x/squid-ecap-av-1.0.3.tar.bz2
+tar xf squid-ecap-av-1.0.3.tar.bz2
 ------------------------------------------------------------------------------
 
 .Build and install:
 ------------------------------------------------------------------------------
-mkdir squid-ecap-av-1.0.1/build
+mkdir squid-ecap-av-1.0.3/build
 cd squid-ecap-av-1.0.1/build
 cmake -DCMAKE_INSTALL_PREFIX=/usr ..
 make
