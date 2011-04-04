@@ -50,18 +50,14 @@
 
 using namespace std;
 
-static const char *socketpath  = "/tmp/clamd.sock";
-static const char *magicdb     = "/usr/share/misc/magic.mgc";
-static const char *skiplist    = "/etc/squid/avscanskip.conf";
 static const char *description = "Securepoint eCAP antivirus adapter";
+static const char *configfn = "/etc/squid/ecap_adapter_av.conf";
 
 #define FUNCENTER() cerr << "==> " << __FUNCTION__ << endl
 #define DBG cerr << __FUNCTION__ << "(), "
 
 #define TIMEOUT 5
 #define ERR cerr << __FUNCTION__ << "(), "
-
-#define TRICKLE_TIME 10	// start trickling after 30 seconds
 
 namespace Adapter
 {                               // not required, but adds clarity
@@ -72,7 +68,7 @@ using libecap::StatusLine;
 class SkipList
 {
 public:
-    SkipList(const char *aPath);
+    SkipList(std::string aPath);
     virtual ~SkipList();
     bool match(const char *expr);
     bool ready();
@@ -114,9 +110,16 @@ public:
     virtual libecap::adapter::Xaction * makeXaction(libecap::host::Xaction * hostx);
 
     // Config
-    SkipList *skipList;
-    int trickle_time; // the time to wait before trickling
-    magic_t mcookie;  // magic cookie
+    SkipList *skipList;      // list of mimetypes to exclude from scanning
+    std::string clamdsocket; // path to clamd socket
+    std::string magicdb;     // magic database location
+    std::string skiplist;    // skiplist file
+    size_type trickletime;   // the time to wait before trickling
+    size_type maxscansize;   // skip scanning bodies greater than maxscansize
+    magic_t mcookie;         // magic cookie
+
+private:
+    void readconfig(std::string aPath);
 
 };
 
@@ -198,17 +201,18 @@ private:
     time_t lastContent;
     bool trickled;
     bool senderror;
+    bool bypass;
 };
 } // namespace Adapter
 
-Adapter::SkipList::SkipList(const char *aPath)
+Adapter::SkipList::SkipList(std::string aPath)
 {
     FUNCENTER();
-    Must(aPath);
+    Must(aPath != "");
     entries = 0;
 
     std::string line;
-    ifstream in(aPath);
+    ifstream in(aPath.c_str());
     if (in.is_open()) {
         while (getline (in, line))
             add(line);
@@ -275,6 +279,9 @@ bool Adapter::SkipList::match(const char *expr)
 bool Adapter::Xaction::mustScan(libecap::Area area)
 {
     FUNCENTER();
+    if (bypass)
+        return false;
+
     if (area.size && service->skipList->ready()) {
         const char *mimetype = magic_buffer(service->mcookie, area.start, area.size);
         if (mimetype) {
@@ -290,7 +297,7 @@ void Adapter::Xaction::guessMode(void)
     ERR << "placebo alert!" << endl;
 }
 
-static int doconnect(void)
+static int doconnect(std::string aPath)
 {
     int sockfd = -1;
 
@@ -300,14 +307,14 @@ static int doconnect(void)
         struct sockaddr_un address;
         memset(&address, 0, sizeof(address));
         address.sun_family = AF_LOCAL;
-        strncpy(address.sun_path, socketpath, sizeof(address.sun_path));
+        strncpy(address.sun_path, aPath.c_str(), sizeof(address.sun_path));
         if (connect(sockfd, (struct sockaddr *) &address, sizeof(address)) == -1) {
             ERR << "can't connect to clamd socket: " << strerror(errno) << endl;
             close(sockfd);
             sockfd = -1;
         }
         fcntl(sockfd, F_SETFL, fcntl(sockfd, F_GETFL) | O_NONBLOCK);
-        DBG << "opened clamd socket @ " << sockfd << endl;
+        DBG << "opened clamd socket " << aPath << " @ " << sockfd << endl;
     }
     return sockfd;
 }
@@ -435,7 +442,7 @@ void Adapter::Xaction::avStart(void)
 
     FUNCENTER();
 
-    if (-1 == (Ctx->sockfd = doconnect())) {
+    if (-1 == (Ctx->sockfd = doconnect(service->clamdsocket))) {
         Ctx->status = stError;
         return;
     }
@@ -481,6 +488,47 @@ void Adapter::Service::describe(std::ostream & os) const
     os << description;
 }
 
+void Adapter::Service::readconfig(std::string aPath)
+{
+    FUNCENTER();
+    Must(aPath != "");
+
+    std::string line;
+    regex_t re;
+    regmatch_t rm[5];
+
+    regcomp(&re, "^([[:alpha:]]+)([ \t=]*)([[:print:]]+)", REG_EXTENDED);
+    ifstream in(aPath.c_str());
+    if (in.is_open()) {
+        while (getline (in, line)) {
+            std::string key, val;
+
+            if (regexec(&re, line.c_str(), 5, rm, 0))
+                continue;
+
+            key = line.substr(rm[1].rm_so, rm[1].rm_eo - rm[1].rm_so);
+            val = line.substr(rm[3].rm_so, rm[3].rm_eo - rm[3].rm_so);
+
+            DBG << " found option " << key << " = " << val << endl;
+
+            if (key == "maxscansize") {
+                maxscansize = atoi(val.c_str());
+            } else if (key == "trickletime") {
+                trickletime = atoi(val.c_str());
+            } else if (key == "clamdsocket") {
+                clamdsocket = val;
+            } else if (key == "magicdb") {
+                magicdb = val;
+            } else if (key == "skiplist") {
+                skiplist = val;
+            }
+        }
+        in.close();
+    } else {
+        ERR << "can't open " << aPath << endl;
+    }
+}
+
 #ifdef V003
 void Adapter::Service::configure(const Config &)
 #else
@@ -506,9 +554,17 @@ void Adapter::Service::start()
     FUNCENTER();
     libecap::adapter::Service::start();
 
+    clamdsocket = "/tmp/clamd.sock";
+    magicdb     = "/usr/share/misc/magic.mgc";
+    skiplist    = "/etc/squid/avscanskip.conf";
+    maxscansize = 0;
+    trickletime = 30;
+
+    readconfig(configfn);
+
     if (!(mcookie = magic_open(MAGIC_MIME_TYPE))) {
         ERR << "can't initialize magic library" << endl;
-    } else if (-1 == magic_load(mcookie, magicdb)) {
+    } else if (-1 == magic_load(mcookie, magicdb.c_str())) {
         ERR << "can't initialize magic database" << endl;
         magic_close(mcookie);
         mcookie = NULL;
@@ -553,7 +609,7 @@ Adapter::Xaction::Xaction(libecap::shared_ptr < Service > aService, libecap::hos
     sendingAb(opUndecided)
 {
     received = processed = 0;
-    trickled = senderror = false;
+    trickled = senderror = bypass = false;
 }
 
 Adapter::Xaction::~Xaction()
@@ -669,7 +725,7 @@ libecap::Area Adapter::Xaction::abContent(size_type offset, size_type size)
     }
 
     // finished receiving?
-    if (receivingVb == opComplete) {
+    if (receivingVb == opComplete || bypass) {
         sz = sizeof(Ctx->buf); // use the whole buffer
         trickled = false;
 
@@ -765,9 +821,11 @@ void Adapter::Xaction::processContent()
 
     FUNCENTER();
 
-    if (now < (startTime + TRICKLE_TIME)) {
+    if (bypass) {
+        noteContentAvailable();
+    } else if (now < (startTime + service->trickletime)) {
         /* */
-    } else if (now < (lastContent + TRICKLE_TIME)) {
+    } else if (now < (lastContent + service->trickletime)) {
         /* */
     } else {
         noteContentAvailable();
@@ -784,6 +842,20 @@ void Adapter::Xaction::noteVbContentAvailable()
     const libecap::Area vb = hostx->vbContent(0, libecap::nsize);
 
     if (sendingAb == opUndecided) {
+
+        // Try to read the ContentLength so we can decide whether scanning has
+        // to be performed or not.
+        if (service->maxscansize && hostx->virgin().header().hasAny(libecap::headerContentLength)) {
+            const libecap::Header::Value value =
+                hostx->virgin().header().value(libecap::headerContentLength);
+            if (value.size > 0) {
+                contentlength = strtoul(value.start, NULL, 10);
+                if (contentlength > service->maxscansize)
+                    bypass = 1;
+                cerr << "Content-Length: " << value.start << " skip: " << (bypass ? "yes" : "no") << endl;
+            }
+        }
+
         if (mustScan(vb)) {
             openTempfile();
             // go to state waiting, hostx->useAdapted() will be called later
@@ -810,6 +882,10 @@ void Adapter::Xaction::noteVbContentAvailable()
 
     // we have a copy; do not need vb any more
     hostx->vbContentShift(vb.size);
+
+    // set bypass flag it we received more than maxscansize bytes
+    if (service->maxscansize && received >= service->maxscansize)
+        bypass = 1;
 
     if (sendingAb == opOn || sendingAb == opWaiting)
         processContent();
