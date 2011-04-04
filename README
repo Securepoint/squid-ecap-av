@@ -94,7 +94,7 @@ adaptation_access AVRESP allow HTTP_STATUS_OK
 ------------------------------------------------------------------------------
 
 To skip scanning of html pages and all image types add the following lines to
-/etc/squid/avscanskip.conf:
+/etc/squid/ecap_adapter_av.skip:
 
 ------------------------------------------------------------------------------
 text/html

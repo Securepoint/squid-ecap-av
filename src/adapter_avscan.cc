@@ -558,7 +558,7 @@ void Adapter::Service::start()
 
     clamdsocket = "/tmp/clamd.sock";
     magicdb     = "/usr/share/misc/magic.mgc";
-    skiplist    = "/etc/squid/avscanskip.conf";
+    skiplist    = "/etc/squid/ecap_adapter_av.skip";
     maxscansize = 0;
     trickletime = 30;
 
