@@ -79,6 +79,7 @@ private:
         regex_t *preg;
         struct skipListEntry *next;
     } *entries;
+    int linenumber;
 };
 
 class Service:public libecap::adapter::Service
@@ -210,12 +211,15 @@ Adapter::SkipList::SkipList(std::string aPath)
     FUNCENTER();
     Must(aPath != "");
     entries = 0;
+    linenumber = 0;
 
     std::string line;
     ifstream in(aPath.c_str());
     if (in.is_open()) {
-        while (getline (in, line))
+        while (getline (in, line)) {
+            linenumber++;
             add(line);
+        }
         in.close();
     } else {
         ERR << "can't open " << aPath << endl;
@@ -233,15 +237,15 @@ void Adapter::SkipList::add(std::string s)
     struct skipListEntry *entry;
 
     if (std::string::npos == s.find_first_not_of(" \t\r\n")) {
-        /* */
+        /* empty line */
     } else if (s.at(0) == '#') {
-        /* */
+        /* comment */
     } else if (!(regex = new regex_t)) {
-        /* */
+        /* oom */
     } else if (0 != regcomp(regex, s.c_str(), REG_EXTENDED | REG_NOSUB)) {
-        /* */
+        ERR << "invalid regular expression @ " << linenumber << endl;
     } else if (!(entry = new (struct skipListEntry))) {
-        /* */
+        /* oom */
     } else {
         entry->expr = s;
         entry->preg = regex;
