@@ -1,3 +1,8 @@
+version 1.0.4
+
+  * report errors if found in mimetype skip list
+  * new config option 'tricklesize'
+
 version 1.0.3
 
   * implemented some config options (via an own config file)

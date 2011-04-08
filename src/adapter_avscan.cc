@@ -116,6 +116,7 @@ public:
     std::string magicdb;     // magic database location
     std::string skiplist;    // skiplist file
     size_type trickletime;   // the time to wait before trickling
+    size_type tricklesize;   // number of bytes to send
     size_type maxscansize;   // skip scanning bodies greater than maxscansize
     magic_t mcookie;         // magic cookie
 
@@ -521,6 +522,9 @@ void Adapter::Service::readconfig(std::string aPath)
                 maxscansize = atoi(val.c_str());
             } else if (key == "trickletime") {
                 trickletime = atoi(val.c_str());
+            } else if (key == "tricklesize") {
+                if (0 >= (tricklesize = atoi(val.c_str())))
+                    tricklesize = 1;
             } else if (key == "clamdsocket") {
                 clamdsocket = val;
             } else if (key == "magicdb") {
@@ -565,6 +569,7 @@ void Adapter::Service::start()
     skiplist    = "/etc/squid/ecap_adapter_av.skip";
     maxscansize = 0;
     trickletime = 30;
+    tricklesize = 10;
 
     readconfig(configfn);
 
@@ -741,7 +746,7 @@ libecap::Area Adapter::Xaction::abContent(size_type offset, size_type size)
             hostx->noteAbContentDone(true);
         }
     } else {
-        sz = 10; // TODO: make config option
+        sz = service->tricklesize;
     }
 
     // if complete, there is nothing more to return.
