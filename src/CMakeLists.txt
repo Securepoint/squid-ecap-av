@@ -1,5 +1,6 @@
 ADD_LIBRARY(ecap_adapter_av SHARED
   adapter_avscan.cc
+  adapter_avscan_Service.cc
 )
 
 FIND_PACKAGE(PkgConfig)

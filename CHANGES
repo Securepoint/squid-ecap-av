@@ -2,6 +2,7 @@ version 1.0.4
 
   * report errors if found in mimetype skip list
   * new config option 'tricklesize'
+  * refactoring
 
 version 1.0.3
 

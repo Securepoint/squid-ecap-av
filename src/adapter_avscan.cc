@@ -31,14 +31,14 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/un.h>
-#include <regex.h>
 #include <fcntl.h>
+
 #include <fstream>
 #include <iostream>
 #include <string>
 #include <cerrno>
+
 #include <libecap/common/message.h>
-#include <libecap/common/registry.h>
 #include <libecap/common/errors.h>
 #include <libecap/common/header.h>
 #include <libecap/common/names.h>
@@ -46,283 +46,12 @@
 #include <libecap/adapter/xaction.h>
 #include <libecap/host/xaction.h>
 #include <libecap/host/host.h>
-#include <magic.h>
+
+#include "adapter_avscan_Service.h"
+#include "adapter_avscan_Xaction.h"
+#include "adapter_avscan.h"
 
 using namespace std;
-
-static const char *description = "Securepoint eCAP antivirus adapter";
-static const char *configfn = "/etc/squid/ecap_adapter_av.conf";
-
-#define FUNCENTER() // cerr << "==> " << __FUNCTION__ << endl
-#define DBG cerr << __FUNCTION__ << "(), "
-
-#define TIMEOUT 5
-#define ERR cerr << __FUNCTION__ << "(), "
-
-namespace Adapter
-{                               // not required, but adds clarity
-
-using libecap::size_type;
-using libecap::StatusLine;
-
-class SkipList
-{
-public:
-    SkipList(std::string aPath);
-    virtual ~SkipList();
-    bool match(const char *expr);
-    bool ready();
-private:
-    void add(std::string s);
-    struct skipListEntry {
-        std::string expr;
-        regex_t *preg;
-        struct skipListEntry *next;
-    } *entries;
-    int linenumber;
-};
-
-class Service:public libecap::adapter::Service
-{
-
-public:
-    // About
-    virtual std::string uri() const;    // unique across all vendors
-    virtual std::string tag() const;    // changes with version and config
-    virtual void describe(std::ostream & os) const;     // free-format info
-
-    // Configuration
-#ifdef V003
-    virtual void configure(const Config & cfg);
-    virtual void reconfigure(const Config & cfg);
-#else
-    virtual void configure(const libecap::Options &cfg);
-    virtual void reconfigure(const libecap::Options &cfg);
-#endif
-    // Lifecycle
-    virtual void start();       // expect makeXaction() calls
-    virtual void stop();        // no more makeXaction() calls until start()
-    virtual void retire();      // no more makeXaction() calls
-
-    // Scope
-    virtual bool wantsUrl(const char *url) const;
-
-    // Work
-    virtual libecap::adapter::Xaction * makeXaction(libecap::host::Xaction * hostx);
-
-    // Config
-    SkipList *skipList;      // list of mimetypes to exclude from scanning
-    std::string clamdsocket; // path to clamd socket
-    std::string magicdb;     // magic database location
-    std::string skiplist;    // skiplist file
-    size_type trickletime;   // the time to wait before trickling
-    size_type tricklesize;   // number of bytes to send
-    size_type maxscansize;   // skip scanning bodies greater than maxscansize
-    magic_t mcookie;         // magic cookie
-
-private:
-    void readconfig(std::string aPath);
-
-};
-
-class Xaction:public libecap::adapter::Xaction
-{
-public:
-    Xaction(libecap::shared_ptr<Service> s, libecap::host::Xaction *x);
-    virtual ~ Xaction();
-
-#ifndef V003
-    // meta-information for the host transaction
-    virtual const libecap::Area option(const libecap::Name &name) const;
-    virtual void visitEachOption(libecap::NamedValueVisitor &visitor) const;
-#endif
-
-    // lifecycle
-    virtual void start();
-    virtual void stop();
-
-    // adapted body transmission control
-    virtual void abDiscard();
-    virtual void abMake();
-    virtual void abMakeMore();
-    virtual void abStopMaking();
-
-    // adapted body content extraction and consumption
-    virtual libecap::Area abContent(size_type offset, size_type size);
-    virtual void abContentShift(size_type size);
-
-    // virgin body state notification
-    virtual void noteVbContentDone(bool atEnd);
-    virtual void noteVbContentAvailable();
-
-    // libecap::Callable API, via libecap::host::Xaction
-    virtual bool callable() const;
-
-protected:
-    void stopVb(); // stops receiving vb (if we are receiving it)
-    libecap::host::Xaction * lastHostCall();      // clears hostx
-
-private:
-    libecap::shared_ptr<const Service> service; // magic database access
-    libecap::host::Xaction * hostx;       // Host transaction rep
-    libecap::shared_ptr <libecap::Message> adapted;
-
-    typedef enum { opUndecided, opWaiting, opOn, opComplete, opNever } OperationState;
-    typedef enum { opBuffered, opTrickle, opViralator } OperationMode;
-    typedef enum { stOK, stError, stInfected } ScanState;
-
-    OperationState receivingVb;
-    OperationState sendingAb;
-    OperationMode avMode;
-
-    struct Ctx
-    {
-        int sockfd;
-        int tempfd;
-        int status;
-        char *tempfn;
-        char buf[BUFSIZ];
-    } *Ctx;
-
-    std::string statusString;
-    void openTempfile(void);
-
-    libecap::Area ErrorPage(void);
-    void avStart(void);
-    void processContent(void);
-    int avReadResponse(void);
-    int avWriteCommand(const char *command);
-    void guessMode(void);
-    bool mustScan(libecap::Area area);
-    void noteContentAvailable(void);
-
-    size_type received;
-    size_type processed;
-    size_type contentlength;
-    time_t startTime;
-    time_t lastContent;
-    bool trickled;
-    bool senderror;
-    bool bypass;
-};
-} // namespace Adapter
-
-Adapter::SkipList::SkipList(std::string aPath)
-{
-    FUNCENTER();
-    Must(aPath != "");
-    entries = 0;
-    linenumber = 0;
-
-    std::string line;
-    ifstream in(aPath.c_str());
-    if (in.is_open()) {
-        while (getline (in, line)) {
-            linenumber++;
-            add(line);
-        }
-        in.close();
-    } else {
-        ERR << "can't open " << aPath << endl;
-    }
-}
-
-Adapter::SkipList::~SkipList()
-{
-    ERR << "placebo alert!" << endl;
-}
-
-void Adapter::SkipList::add(std::string s)
-{
-    regex_t *regex = NULL;
-    struct skipListEntry *entry;
-
-    if (std::string::npos == s.find_first_not_of(" \t\r\n")) {
-        /* empty line */
-    } else if (s.at(0) == '#') {
-        /* comment */
-    } else if (!(regex = new regex_t)) {
-        /* oom */
-    } else if (0 != regcomp(regex, s.c_str(), REG_EXTENDED | REG_NOSUB)) {
-        ERR << "invalid regular expression @ " << linenumber << endl;
-    } else if (!(entry = new (struct skipListEntry))) {
-        /* oom */
-    } else {
-        entry->expr = s;
-        entry->preg = regex;
-        entry->next = entries;
-        entries = entry;
-        return;
-    }
-
-    delete(regex);
-}
-
-bool Adapter::SkipList::ready(void)
-{
-    FUNCENTER();
-    return entries != 0;
-}
-
-bool Adapter::SkipList::match(const char *expr)
-{
-    FUNCENTER();
-    struct skipListEntry *e = entries;
-    while (e) {
-        if (0 == regexec(e->preg, expr, 0, 0, 0)) {
-            DBG << "matched: <" << expr << ">::<" << e->expr << ">" << endl;
-            return true;
-        }
-        e = e->next;
-    }
-    return false;
-}
-
-/**
- * Determines if we should scan or not.
- */
-bool Adapter::Xaction::mustScan(libecap::Area area)
-{
-    FUNCENTER();
-    if (bypass)
-        return false;
-
-    if (area.size && service->skipList->ready()) {
-        const char *mimetype = magic_buffer(service->mcookie, area.start, area.size);
-        if (mimetype) {
-            if (service->skipList->match(mimetype))
-                return false;
-        }
-    }
-    return true;
-}
-
-void Adapter::Xaction::guessMode(void)
-{
-    ERR << "placebo alert!" << endl;
-}
-
-static int doconnect(std::string aPath)
-{
-    int sockfd = -1;
-
-    if ((sockfd = socket(AF_LOCAL, SOCK_STREAM, 0)) == -1) {
-        ERR << "can't initialize clamd socket: " << strerror(errno) << endl;
-    } else {
-        struct sockaddr_un address;
-        memset(&address, 0, sizeof(address));
-        address.sun_family = AF_LOCAL;
-        strncpy(address.sun_path, aPath.c_str(), sizeof(address.sun_path));
-        if (connect(sockfd, (struct sockaddr *) &address, sizeof(address)) == -1) {
-            ERR << "can't connect to clamd socket: " << strerror(errno) << endl;
-            close(sockfd);
-            sockfd = -1;
-        }
-        fcntl(sockfd, F_SETFL, fcntl(sockfd, F_GETFL) | O_NONBLOCK);
-        DBG << "opened clamd socket " << aPath << " @ " << sockfd << endl;
-    }
-    return sockfd;
-}
 
 libecap::Area Adapter::Xaction::ErrorPage(void)
 {
@@ -337,6 +66,25 @@ libecap::Area Adapter::Xaction::ErrorPage(void)
     }
     errmsg += "</body></html>\n";
     return libecap::Area::FromTempString(errmsg);
+}
+
+/**
+ * Determines if we should scan or not.
+  */
+bool Adapter::Xaction::mustScan(libecap::Area area)
+{
+    FUNCENTER();
+    if (bypass)
+        return false;
+
+    if (area.size && service->skipList->ready()) {
+        const char *mimetype = magic_buffer(service->mcookie, area.start, area.size);
+        if (mimetype) {
+            if (service->skipList->match(mimetype))
+                return false;
+        }
+    }
+    return true;
 }
 
 void Adapter::Xaction::openTempfile(void)
@@ -438,6 +186,28 @@ int Adapter::Xaction::avReadResponse(void)
     return -1;
 }
 
+static int doconnect(std::string aPath)
+{
+    int sockfd = -1;
+
+    if ((sockfd = socket(AF_LOCAL, SOCK_STREAM, 0)) == -1) {
+        ERR << "can't initialize clamd socket: " << strerror(errno) << endl;
+    } else {
+        struct sockaddr_un address;
+        memset(&address, 0, sizeof(address));
+        address.sun_family = AF_LOCAL;
+        strncpy(address.sun_path, aPath.c_str(), sizeof(address.sun_path));
+        if (connect(sockfd, (struct sockaddr *) &address, sizeof(address)) == -1) {
+            ERR << "can't connect to clamd socket: " << strerror(errno) << endl;
+            close(sockfd);
+            sockfd = -1;
+        }
+        fcntl(sockfd, F_SETFL, fcntl(sockfd, F_GETFL) | O_NONBLOCK);
+        DBG << "opened clamd socket " << aPath << " @ " << sockfd << endl;
+    }
+    return sockfd;
+}
+
 void Adapter::Xaction::avStart(void)
 {
     struct iovec iov[1];
@@ -475,144 +245,6 @@ void Adapter::Xaction::avStart(void)
         ERR << "FD send failed: " << strerror(errno) << endl;
         Ctx->status = stError;
     }
-}
-
-std::string Adapter::Service::uri() const
-{
-    FUNCENTER();
-    return "ecap://www.securepoint.de/ecap_av";
-}
-
-std::string Adapter::Service::tag() const
-{
-    FUNCENTER();
-    return PACKAGE_VERSION;
-}
-
-void Adapter::Service::describe(std::ostream & os) const
-{
-    FUNCENTER();
-    os << description;
-}
-
-void Adapter::Service::readconfig(std::string aPath)
-{
-    FUNCENTER();
-    Must(aPath != "");
-
-    std::string line;
-    regex_t re;
-    regmatch_t rm[5];
-
-    regcomp(&re, "^([[:alpha:]]+)([ \t=]*)([[:print:]]+)", REG_EXTENDED);
-    ifstream in(aPath.c_str());
-    if (in.is_open()) {
-        while (getline (in, line)) {
-            std::string key, val;
-
-            if (regexec(&re, line.c_str(), 5, rm, 0))
-                continue;
-
-            key = line.substr(rm[1].rm_so, rm[1].rm_eo - rm[1].rm_so);
-            val = line.substr(rm[3].rm_so, rm[3].rm_eo - rm[3].rm_so);
-
-            DBG << " found option " << key << " = " << val << endl;
-
-            if (key == "maxscansize") {
-                maxscansize = atoi(val.c_str());
-            } else if (key == "trickletime") {
-                trickletime = atoi(val.c_str());
-            } else if (key == "tricklesize") {
-                if (0 >= (tricklesize = atoi(val.c_str())))
-                    tricklesize = 1;
-            } else if (key == "clamdsocket") {
-                clamdsocket = val;
-            } else if (key == "magicdb") {
-                magicdb = val;
-            } else if (key == "skiplist") {
-                skiplist = val;
-            }
-        }
-        in.close();
-    } else {
-        ERR << "can't open " << aPath << endl;
-    }
-}
-
-#ifdef V003
-void Adapter::Service::configure(const Config &)
-#else
-void Adapter::Service::configure(const libecap::Options &cfg)
-#endif
-{
-    FUNCENTER();
-    // this service is not configurable
-}
-
-#ifdef V003
-void Adapter::Service::reconfigure(const Config &)
-#else
-void Adapter::Service::reconfigure(const libecap::Options &cfg)
-#endif
-{
-    FUNCENTER();
-    // this service is not configurable
-}
-
-void Adapter::Service::start()
-{
-    FUNCENTER();
-    libecap::adapter::Service::start();
-
-    clamdsocket = "/tmp/clamd.sock";
-    magicdb     = "/usr/share/misc/magic.mgc";
-    skiplist    = "/etc/squid/ecap_adapter_av.skip";
-    maxscansize = 0;
-    trickletime = 30;
-    tricklesize = 10;
-
-    readconfig(configfn);
-
-    if (!(mcookie = magic_open(MAGIC_MIME_TYPE))) {
-        ERR << "can't initialize magic library" << endl;
-    } else if (-1 == magic_load(mcookie, magicdb.c_str())) {
-        ERR << "can't initialize magic database" << endl;
-        magic_close(mcookie);
-        mcookie = NULL;
-    }
-    skipList = new Adapter::SkipList(skiplist);
-}
-
-void Adapter::Service::stop()
-{
-    FUNCENTER();
-
-    if (mcookie)
-        magic_close(mcookie);
-    if (skipList)
-        delete(skipList);
-
-    libecap::adapter::Service::stop();
-}
-
-void Adapter::Service::retire()
-{
-    FUNCENTER();
-    // custom code would go here, but this service does not have one
-    libecap::adapter::Service::stop();
-}
-
-bool Adapter::Service::wantsUrl(const char *url) const
-{
-    FUNCENTER();
-    return true;                  // no-op is applied to all messages
-}
-
-libecap::adapter::Xaction *
-Adapter::Service::makeXaction(libecap::host::Xaction * hostx)
-{
-    FUNCENTER();
-    return new Adapter::Xaction(std::tr1::static_pointer_cast<Service>(self), hostx);
 }
 
 Adapter::Xaction::Xaction(libecap::shared_ptr < Service > aService, libecap::host::Xaction * x):service(aService), hostx(x),
@@ -782,12 +414,16 @@ void Adapter::Xaction::noteContentAvailable()
         adapted = hostx->virgin().clone();
         Must(adapted != 0);
 
-        adapted->header().removeAny(libecap::headerContentLength);
+        libecap::FirstLine *firstLine = &(adapted->firstLine());
+        libecap::StatusLine *statusLine = dynamic_cast<libecap::StatusLine*>(firstLine);
+        libecap::RequestLine *requestLine = dynamic_cast<libecap::RequestLine*>(firstLine);
+
+        // do not remove the Content-Length header in 'reqmod'
+        if (statusLine)
+            adapted->header().removeAny(libecap::headerContentLength);
 
         if (Ctx->status != stOK) {
             // last chance to indicate an error
-            libecap::FirstLine *firstLine = &(adapted->firstLine());
-            libecap::StatusLine *statusLine = dynamic_cast<libecap::StatusLine*>(firstLine);
 
             const libecap::Name name("Content-Type");
             const libecap::Header::Value value = libecap::Area::FromTempString("text/html");
@@ -801,7 +437,7 @@ void Adapter::Xaction::noteContentAvailable()
         }
 
         const libecap::Name name("X-Ecap");
-        const libecap::Header::Value value = libecap::Area::FromTempString(description);
+        const libecap::Header::Value value = libecap::Area::FromTempString(ADAPTERNAME);
         adapted->header().add(name, value);
 
         hostx->useAdapted(adapted);
@@ -932,7 +568,3 @@ libecap::host::Xaction * Adapter::Xaction::lastHostCall()
     hostx = 0;
     return x;
 }
-
-// create the adapter and register with libecap to reach the host application
-static const bool Registered =
-    (libecap::RegisterService(new Adapter::Service), true);
