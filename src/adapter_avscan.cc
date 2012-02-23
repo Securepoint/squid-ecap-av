@@ -426,7 +426,9 @@ void Adapter::Xaction::noteContentAvailable()
             // last chance to indicate an error
 
             const libecap::Name name("Content-Type");
+            const libecap::Name disp("Content-Disposition");
             const libecap::Header::Value value = libecap::Area::FromTempString("text/html");
+            adapted->header().removeAny(disp);
             adapted->header().removeAny(name);
             adapted->header().add(name, value);
 
