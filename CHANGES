@@ -1,5 +1,6 @@
 version 1.0.4
 
+  * remove Content-Disposition header before sending an error page
   * report errors if found in mimetype skip list
   * new config option 'tricklesize'
   * refactoring
