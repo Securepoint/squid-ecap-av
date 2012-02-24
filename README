@@ -73,7 +73,7 @@ tar xf squid-ecap-av-1.0.4.tar.bz2
 .Build and install:
 ------------------------------------------------------------------------------
 mkdir squid-ecap-av-1.0.4/build
-cd squid-ecap-av-1.0.1/build
+cd squid-ecap-av-1.0.4/build
 cmake -DCMAKE_INSTALL_PREFIX=/usr ..
 make
 make install
