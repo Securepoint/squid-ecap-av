@@ -177,9 +177,9 @@ void Adapter::Service::readconfig(std::string aPath)
 }
 
 #ifdef V003
-void Adapter::Service::configure(const Config &)
+void Adapter::Service::configure(UNUSED const Config &)
 #else
-void Adapter::Service::configure(const libecap::Options &cfg)
+void Adapter::Service::configure(UNUSED const libecap::Options &cfg)
 #endif
 {
     FUNCENTER();
@@ -187,9 +187,9 @@ void Adapter::Service::configure(const libecap::Options &cfg)
 }
 
 #ifdef V003
-void Adapter::Service::reconfigure(const Config &)
+void Adapter::Service::reconfigure(UNUSED const Config &)
 #else
-void Adapter::Service::reconfigure(const libecap::Options &cfg)
+void Adapter::Service::reconfigure(UNUSED const libecap::Options &cfg)
 #endif
 {
     FUNCENTER();
@@ -239,7 +239,7 @@ void Adapter::Service::retire()
     libecap::adapter::Service::stop();
 }
 
-bool Adapter::Service::wantsUrl(const char *url) const
+bool Adapter::Service::wantsUrl(UNUSED const char *url) const
 {
     FUNCENTER();
     return true;                  // no-op is applied to all messages

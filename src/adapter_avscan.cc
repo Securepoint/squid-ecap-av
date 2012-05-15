@@ -215,7 +215,6 @@ void Adapter::Xaction::avStart(void)
     struct cmsghdr *cmsg;
     unsigned char fdbuf[CMSG_SPACE(sizeof(int))];
     char dummy[]="";
-    int fd;
 
     FUNCENTER();
 
@@ -350,7 +349,7 @@ void Adapter::Xaction::abStopMaking()
     stopVb();
 }
 
-libecap::Area Adapter::Xaction::abContent(size_type offset, size_type size)
+libecap::Area Adapter::Xaction::abContent(UNUSED size_type offset, UNUSED size_type size)
 {
     size_type sz;
     FUNCENTER();
@@ -416,7 +415,6 @@ void Adapter::Xaction::noteContentAvailable()
 
         libecap::FirstLine *firstLine = &(adapted->firstLine());
         libecap::StatusLine *statusLine = dynamic_cast<libecap::StatusLine*>(firstLine);
-        libecap::RequestLine *requestLine = dynamic_cast<libecap::RequestLine*>(firstLine);
 
         // do not remove the Content-Length header in 'reqmod'
         if (statusLine)
@@ -448,7 +446,7 @@ void Adapter::Xaction::noteContentAvailable()
 }
 
 // finished reading the virgin body
-void Adapter::Xaction::noteVbContentDone(bool atEnd)
+void Adapter::Xaction::noteVbContentDone(UNUSED bool atEnd)
 {
     FUNCENTER();
     Must(Ctx);
