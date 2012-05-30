@@ -32,6 +32,7 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <fcntl.h>
+#include <limits.h>
 
 #include <fstream>
 #include <iostream>
@@ -89,10 +90,11 @@ bool Adapter::Xaction::mustScan(libecap::Area area)
 
 void Adapter::Xaction::openTempfile(void)
 {
-    char fn[] = "/var/tmp/squid-ecap-XXXXXX";
+    char fn[PATH_MAX];
     FUNCENTER();
 
-    if (-1 == (Ctx->tempfd = mkstemp(fn))) {
+    snprintf(fn, PATH_MAX - 1, "%s/squid-ecap-XXXXXX", service->tempdir.c_str());
+    if (-1 == (Ctx->tempfd = mkstemp((char *)fn))) {
         ERR << "can't open temp file " << fn << endl;
         Ctx->status = stError;
         return;

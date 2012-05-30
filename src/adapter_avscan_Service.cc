@@ -166,6 +166,8 @@ void Adapter::Service::readconfig(std::string aPath)
                 clamdsocket = val;
             } else if (key == "magicdb") {
                 magicdb = val;
+            } else if (key == "tempdir") {
+                tempdir = val;
             } else if (key == "skiplist") {
                 skiplist = val;
             }
@@ -204,6 +206,7 @@ void Adapter::Service::start()
     clamdsocket = "/tmp/clamd.sock";
     magicdb     = "/usr/share/misc/magic.mgc";
     skiplist    = "/etc/squid/ecap_adapter_av.skip";
+    tempdir     = "/var/tmp";
     maxscansize = 0;
     trickletime = 30;
     tricklesize = 10;
