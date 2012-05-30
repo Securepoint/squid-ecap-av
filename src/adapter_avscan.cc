@@ -99,8 +99,8 @@ void Adapter::Xaction::openTempfile(void)
         Ctx->status = stError;
         return;
     }
+    unlink(fn);
     DBG << "opened temp file " << fn << " @ " << Ctx->tempfd << endl;
-    Ctx->tempfn = strdup(fn);
 }
 
 int Adapter::Xaction::avWriteCommand(const char *command)
@@ -267,10 +267,6 @@ Adapter::Xaction::~Xaction()
         if (-1 != Ctx->tempfd)
             close(Ctx->tempfd);
 
-        if (Ctx->tempfn) {
-            unlink(Ctx->tempfn);
-            free(Ctx->tempfn);
-        }
         free(Ctx);
     }
 
