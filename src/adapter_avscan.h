@@ -23,13 +23,19 @@
 #define _ADAPTER_AVSCAN_H 1
 
 #define ADAPTERNAME "Securepoint eCAP antivirus adapter"
+
 #ifdef __GNUC__
-#define UNUSED __attribute__((__unused__))
+  #define UNUSED __attribute__((__unused__))
 #else
-#define UNUSED
+  #define UNUSED
 #endif
-#define FUNCENTER() // cerr << "==> " << __FUNCTION__ << endl
-#define DBG cerr << __FUNCTION__ << "(), "
+
+#ifdef DEBUG
+  #define FUNCENTER() cerr << "==> " << __FUNCTION__ << endl
+#else
+  #define FUNCENTER()
+#endif
+
 #define ERR cerr << __FUNCTION__ << "(), "
 
 #define TIMEOUT 5

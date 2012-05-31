@@ -100,7 +100,6 @@ void Adapter::Xaction::openTempfile(void)
         return;
     }
     unlink(fn);
-    DBG << "opened temp file " << fn << " @ " << Ctx->tempfd << endl;
 }
 
 int Adapter::Xaction::avWriteCommand(const char *command)
@@ -175,14 +174,10 @@ int Adapter::Xaction::avReadResponse(void)
                 Ctx->status = stInfected;
                 statusString = ++colon;
                 statusString.resize(statusString.size() - 6);
-                DBG << "infected" << endl;
             } else if(!memcmp(eol - 7, " ERROR", 6)) {
                 Ctx->status = stError;
-            } else {
-                DBG << "nix" << endl;
             }
         }
-        DBG << buf << endl;
         return n;
     }
     return -1;
@@ -205,7 +200,6 @@ static int doconnect(std::string aPath)
             sockfd = -1;
         }
         fcntl(sockfd, F_SETFL, fcntl(sockfd, F_GETFL) | O_NONBLOCK);
-        DBG << "opened clamd socket " << aPath << " @ " << sockfd << endl;
     }
     return sockfd;
 }

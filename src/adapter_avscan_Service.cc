@@ -106,7 +106,6 @@ bool Adapter::SkipList::match(const char *expr)
     struct skipListEntry *e = entries;
     while (e) {
         if (0 == regexec(e->preg, expr, 0, 0, 0)) {
-            DBG << "matched: <" << expr << ">::<" << e->expr << ">" << endl;
             return true;
         }
         e = e->next;
@@ -152,8 +151,6 @@ void Adapter::Service::readconfig(std::string aPath)
 
             key = line.substr(rm[1].rm_so, rm[1].rm_eo - rm[1].rm_so);
             val = line.substr(rm[3].rm_so, rm[3].rm_eo - rm[3].rm_so);
-
-            DBG << " found option " << key << " = " << val << endl;
 
             if (key == "maxscansize") {
                 maxscansize = atoi(val.c_str());
