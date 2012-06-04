@@ -79,7 +79,7 @@ public:
     std::string magicdb;     // magic database location
     std::string skiplist;    // skiplist file
     std::string tempdir;     // directory to store temp files in
-    size_type trickletime;   // the time to wait before trickling
+    time_t trickletime;   // the time to wait before trickling
     size_type tricklesize;   // number of bytes to send
     size_type maxscansize;   // skip scanning bodies greater than maxscansize
     magic_t mcookie;         // magic cookie

@@ -381,7 +381,7 @@ libecap::Area Adapter::Xaction::abContent(UNUSED size_type offset, UNUSED size_t
 
     lseek(Ctx->tempfd, processed, SEEK_SET);
 
-    if (-1 == (sz = read(Ctx->tempfd, Ctx->buf,  sz))) {
+    if ((size_type)-1 == (sz = (size_type)read(Ctx->tempfd, Ctx->buf,  sz))) {
         ERR << "can't read from temp file: " << strerror(errno) << endl;
         Ctx->status = stError;
         return libecap::Area::FromTempString("");
