@@ -124,7 +124,7 @@ int Adapter::Xaction::avWriteCommand(const char *command)
         return n;
     } else if (n == -1 && errno != EAGAIN) {
         ERR << "write: " << strerror(errno) << endl;
-    } else if (-1 == select(Ctx->sockfd + 1, &wfds, NULL, NULL, &tv)) {
+    } else if (-1 == select(Ctx->sockfd + 1, NULL, &wfds, NULL, &tv)) {
         ERR << "select: " << strerror(errno) << endl;
     } else if (!(FD_ISSET(Ctx->sockfd, &wfds))) {
         ERR << "timeout @ " << Ctx->sockfd << endl;
