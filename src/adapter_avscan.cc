@@ -158,30 +158,28 @@ int Adapter::Xaction::avReadResponse(void)
         ERR << "select; " << strerror(errno) << endl;
     } else if (!FD_ISSET(Ctx->sockfd, &rfds)) {
         ERR << "timeout @ " << Ctx->sockfd << endl;
-        return -2;
+        n = -2;
     } else if (-1 == (n = read(Ctx->sockfd, buf, sizeof(buf)))) {
         ERR << "read: " << strerror(errno) << endl;
     }
 
-    if (n == -1) {
-        /* */
-    } else {
-        if (n > 7) {
-            char *colon = strrchr(buf, ':');
-            char *eol = buf + n;
-            if(!colon) {
-                Ctx->status = stError;
-            } else if(!memcmp(eol - 7, " FOUND", 6)) {
-                Ctx->status = stInfected;
-                statusString = ++colon;
-                statusString.resize(statusString.size() - 6);
-            } else if(!memcmp(eol - 7, " ERROR", 6)) {
-                Ctx->status = stError;
-            }
-        }
-        return n;
+    if (n > 0) {
+	char *colon = strrchr(buf, ':');
+	char *eol = buf + n;
+	if(!colon) {
+	    Ctx->status = stError;
+	    statusString = "garbled Response from AV-daemon";
+	} else if(!memcmp(eol - 7, " FOUND", 6)) {
+	    Ctx->status = stInfected;
+	    statusString = ++colon;
+	    statusString.resize(statusString.size() - 6);
+	} else if(!memcmp(eol - 7, " ERROR", 6)) {
+	    Ctx->status = stError;
+	    statusString = ++colon;
+	    statusString.resize(statusString.size() - 6);
+	}
     }
-    return -1;
+    return n;
 }
 
 static int doconnect(std::string aPath)
