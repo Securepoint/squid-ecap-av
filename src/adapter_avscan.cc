@@ -168,7 +168,7 @@ int Adapter::Xaction::avReadResponse(void)
 	char *eol = buf + n;
 	if(!colon) {
 	    Ctx->status = stError;
-	    statusString = "garbled Response from AV-daemon";
+	    statusString = "garbled response from AV-daemon";
 	} else if(!memcmp(eol - 7, " FOUND", 6)) {
 	    Ctx->status = stInfected;
 	    statusString = ++colon;
@@ -187,14 +187,14 @@ static int doconnect(std::string aPath)
     int sockfd = -1;
 
     if ((sockfd = socket(AF_LOCAL, SOCK_STREAM, 0)) == -1) {
-        ERR << "can't initialize clamd socket: " << strerror(errno) << endl;
+        ERR << "can't initialize AV-daemon socket: " << strerror(errno) << endl;
     } else {
         struct sockaddr_un address;
         memset(&address, 0, sizeof(address));
         address.sun_family = AF_LOCAL;
         strncpy(address.sun_path, aPath.c_str(), sizeof(address.sun_path));
         if (connect(sockfd, (struct sockaddr *) &address, sizeof(address)) == -1) {
-            ERR << "can't connect to clamd socket: " << strerror(errno) << endl;
+            ERR << "can't connect to AV-daemon socket: " << strerror(errno) << endl;
             close(sockfd);
             sockfd = -1;
         }
