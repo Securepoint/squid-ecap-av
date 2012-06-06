@@ -480,6 +480,13 @@ void Adapter::Xaction::noteVbContentAvailable()
     Must(receivingVb == opOn);
     Must(Ctx);
 
+    if (Ctx->status == stError) {
+        // Tell client not to expect to get more data
+	sendingAb = opComplete;
+	hostx->noteAbContentDone(true);
+	return;
+    }
+
     // get all virgin body
     const libecap::Area vb = hostx->vbContent(0, libecap::nsize);
 
@@ -515,9 +522,10 @@ void Adapter::Xaction::noteVbContentAvailable()
     lseek(Ctx->tempfd, 0, SEEK_END);
 
     // write body to temp file
-    if (-1 == write(Ctx->tempfd, vb.start, vb.size)) {
+    if (vb.size != write(Ctx->tempfd, vb.start, vb.size)) {
         cerr << "can't write to temp file\n";
         Ctx->status = stError;
+	return;
     }
 
     received += vb.size;
