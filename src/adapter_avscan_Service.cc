@@ -153,9 +153,9 @@ void Adapter::Service::readconfig(std::string aPath)
             val = line.substr(rm[3].rm_so, rm[3].rm_eo - rm[3].rm_so);
 
             if (key == "maxscansize") {
-                maxscansize = atoi(val.c_str());
+                maxscansize = strtoul(val.c_str(), NULL, 10);
             } else if (key == "trickletime") {
-                trickletime = atoi(val.c_str());
+                trickletime = strtoul(val.c_str(), NULL, 10);
             } else if (key == "tricklesize") {
                 if (0 >= (tricklesize = atoi(val.c_str())))
                     tricklesize = 1;
