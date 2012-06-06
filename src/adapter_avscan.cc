@@ -60,7 +60,7 @@ libecap::Area Adapter::Xaction::ErrorPage(void)
     std::string errmsg = "<html><head></head><body>";
     if (Ctx->status == stInfected) {
         errmsg += "<h1>Access denied!</h1>";
-        errmsg += "You've tried to upload/download a file that contains the virus <b>";
+        errmsg += "You've tried to upload/download a file that contains the virus ";
         errmsg += "<b>" + statusString + "</b>.";
     } else {
         errmsg += "<h1>Internal error!</h1>";
