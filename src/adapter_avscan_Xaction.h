@@ -70,7 +70,7 @@ private:
     libecap::host::Xaction * hostx;       // Host transaction rep
     libecap::shared_ptr <libecap::Message> adapted;
 
-    typedef enum { opUndecided, opWaiting, opOn, opComplete, opNever } OperationState;
+    typedef enum { opUndecided, opWaiting, opOn, opScanning, opComplete, opNever } OperationState;
     typedef enum { opBuffered, opTrickle, opViralator } OperationMode;
     typedef enum { stOK, stError, stInfected } ScanState;
 

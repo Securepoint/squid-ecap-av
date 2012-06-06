@@ -443,12 +443,16 @@ void Adapter::Xaction::noteVbContentDone(UNUSED bool atEnd)
     Must(Ctx);
     Must(receivingVb == opOn);
 
-    receivingVb = opComplete;
-
-    avStart();
-    if (Ctx->status == stOK) {
-        while (-2 == avReadResponse())
-            ;
+    if (bypass) {
+	receivingVb = opComplete;
+    } else {
+	receivingVb = opScanning;
+	avStart();
+	if (Ctx->status == stOK) {
+	    while (-2 == avReadResponse())
+		noteContentAvailable();
+	}
+	receivingVb = opComplete;
     }
     noteContentAvailable();
 }
