@@ -22,6 +22,7 @@
 #include <libecap/adapter/service.h>
 #include <magic.h>
 #include <regex.h>
+#include "adapter_avscan.h"
 
 namespace Adapter
 {
@@ -74,12 +75,13 @@ public:
     virtual libecap::adapter::Xaction * makeXaction(libecap::host::Xaction * hostx);
 
     // Config
+    ScanMethod method;       // method to use (INSTREAM or FILDES)
     SkipList *skipList;      // list of mimetypes to exclude from scanning
     std::string clamdsocket; // path to clamd socket
     std::string magicdb;     // magic database location
     std::string skiplist;    // skiplist file
     std::string tempdir;     // directory to store temp files in
-    time_t trickletime;   // the time to wait before trickling
+    time_t trickletime;      // the time to wait before trickling
     size_type tricklesize;   // number of bytes to send
     size_type maxscansize;   // skip scanning bodies greater than maxscansize
     magic_t mcookie;         // magic cookie

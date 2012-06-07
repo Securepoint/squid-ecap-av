@@ -119,6 +119,7 @@ Currently the following options are supported:
 * +magicdb+: path to the magic database file (+/usr/share/misc/magic.mgc+)
 * +skiplist+: path to the file containing the list of mimetypes not to scan (+/etc/squid/ecap_adapter_av.skip+)
 * +tempdir+: directory to store temporary files in
+* +method+: method (fildes|instream) to send files to the AV-daemon (+fildes+)
 
 Testing
 -------

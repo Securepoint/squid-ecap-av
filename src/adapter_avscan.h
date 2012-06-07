@@ -39,5 +39,6 @@
 #define ERR cerr << __FUNCTION__ << "(), "
 
 #define TIMEOUT 5
+typedef enum { methNone, methInstream, methFildes } ScanMethod;
 
 #endif

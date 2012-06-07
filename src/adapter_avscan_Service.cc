@@ -19,10 +19,11 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
-#include <stdlib.h>   // atoi()
+//#include <stdlib.h>   // atoi()
 
 #include <fstream>
 #include <iostream>
+#include <algorithm>
 #include <string>
 #include <cerrno>
 
@@ -131,6 +132,22 @@ void Adapter::Service::describe(std::ostream & os) const
     os << ADAPTERNAME;
 }
 
+static ScanMethod parseMeth(std::string aMethod)
+{
+    ScanMethod meth = methFildes;
+
+    transform(aMethod.begin(), aMethod.end(), aMethod.begin(), ::tolower);
+
+    if (aMethod == "fildes") {
+	/* */
+    } else if (aMethod == "instream") {
+	meth = methInstream;
+    } else {
+        ERR << "invalid scan method, falling back to FILDES" << endl;
+    }
+    return meth;
+}
+
 void Adapter::Service::readconfig(std::string aPath)
 {
     FUNCENTER();
@@ -167,7 +184,9 @@ void Adapter::Service::readconfig(std::string aPath)
                 tempdir = val;
             } else if (key == "skiplist") {
                 skiplist = val;
-            }
+            } else if (key == "method") {
+		method = parseMeth(val);
+	    }
         }
         in.close();
     } else {
@@ -207,6 +226,7 @@ void Adapter::Service::start()
     maxscansize = 0;
     trickletime = 30;
     tricklesize = 10;
+    method      = methFildes;
 
     readconfig(configfn);
 

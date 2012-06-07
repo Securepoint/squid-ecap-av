@@ -32,8 +32,11 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <sys/uio.h>
 #include <fcntl.h>
 #include <limits.h>
+#include <inttypes.h>	// uint32_t
+#include <arpa/inet.h>	// htonl
 
 #include <fstream>
 #include <iostream>
@@ -203,7 +206,49 @@ static int doconnect(std::string aPath)
     return sockfd;
 }
 
-void Adapter::Xaction::avStart(void)
+int Adapter::Xaction::avWriteChunk(char *buf, ssize_t len)
+{
+    struct iovec iov[2];
+    uint32_t chunksize = htonl((uint32_t)len);
+    int n;
+
+    FUNCENTER();
+    iov[0].iov_len  = 4;
+    iov[0].iov_base = &chunksize;
+    iov[1].iov_len  = len;
+    iov[1].iov_base = buf;
+
+    while (-1 == (n = writev(Ctx->sockfd, iov, 2)) && errno == EAGAIN);
+
+    return n;
+}
+
+void Adapter::Xaction::avWriteStream(void)
+{
+    char buf[BUFSIZ];
+    ssize_t len;
+
+    FUNCENTER();
+    // Set offset to the beginning of the file
+    if (-1 == lseek(Ctx->tempfd, 0, SEEK_SET)) {
+	Ctx->status = stError;
+    } else while (1) {
+	if (-1 == (len = read(Ctx->tempfd, buf, BUFSIZ))) {
+	    ERR << "read from tempfile failed: " << strerror(errno) << endl;
+	    Ctx->status = stError;
+	} else if (-1 == avWriteChunk(buf, len)) {
+	    ERR << "write to AV-daemon failed: " << strerror(errno) << endl;
+	    Ctx->status = stError;
+	} else if (!len) {
+	    /* */
+	} else {
+	    continue;
+	}
+	break;
+    }
+}
+
+void Adapter::Xaction::avStartFildes(void)
 {
     struct iovec iov[1];
     struct msghdr msg;
@@ -212,12 +257,6 @@ void Adapter::Xaction::avStart(void)
     char dummy[]="";
 
     FUNCENTER();
-
-    if (-1 == (Ctx->sockfd = doconnect(service->clamdsocket))) {
-        Ctx->status = stError;
-        return;
-    }
-
     if (-1 == avWriteCommand("zFILDES")) {
         Ctx->status = stError;
         return;
@@ -239,6 +278,31 @@ void Adapter::Xaction::avStart(void)
         ERR << "FD send failed: " << strerror(errno) << endl;
         Ctx->status = stError;
     }
+}
+
+void Adapter::Xaction::avStartInstream(void)
+{
+    FUNCENTER();
+    if (-1 == avWriteCommand("zINSTREAM")) {
+        Ctx->status = stError;
+    } else {
+	avWriteStream();
+    }
+}
+
+void Adapter::Xaction::avStart(void)
+{
+
+    FUNCENTER();
+
+    if (-1 == (Ctx->sockfd = doconnect(service->clamdsocket))) {
+        Ctx->status = stError;
+    } else if (service->method == methInstream) {
+	avStartInstream();
+    } else {
+	avStartFildes();
+    }
+
 }
 
 Adapter::Xaction::Xaction(libecap::shared_ptr < Service > aService, libecap::host::Xaction * x):service(aService), hostx(x),

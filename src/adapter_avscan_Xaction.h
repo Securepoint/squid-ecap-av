@@ -92,9 +92,13 @@ private:
 
     libecap::Area ErrorPage(void);
     void avStart(void);
+    void avStartFildes(void);
+    void avStartInstream(void);
+    void avWriteStream(void);
+    int  avReadResponse(void);
+    int  avWriteCommand(const char *command);
+    int  avWriteChunk(char *buf, ssize_t len);
     void processContent(void);
-    int avReadResponse(void);
-    int avWriteCommand(const char *command);
     bool mustScan(libecap::Area area);
     void noteContentAvailable(void);
 

@@ -1,3 +1,7 @@
+  * new config option 'method' (fildes|instream)
+  * added abbility to scan files via INSTREAM command
+  * lots of small improvements
+
 version 1.0.5
 
   * new config option 'tempdir'
