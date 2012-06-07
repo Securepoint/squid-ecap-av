@@ -499,9 +499,10 @@ void Adapter::Xaction::noteVbContentAvailable()
                 hostx->virgin().header().value(libecap::headerContentLength);
             if (value.size > 0) {
                 contentlength = strtoul(value.start, NULL, 10);
-                if (contentlength > service->maxscansize)
+                if (contentlength > service->maxscansize) {
                     bypass = 1;
-                cerr << "Content-Length: " << value.start << " skip: " << (bypass ? "yes" : "no") << endl;
+		    cerr << "Content-Length " << value.start << " exceeds max scansize: skipping" << endl;
+		}
             }
         }
 
