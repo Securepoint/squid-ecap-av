@@ -230,10 +230,19 @@ void Adapter::Service::start()
 
     readconfig(configfn);
 
-    if (!(mcookie = magic_open(MAGIC_MIME_TYPE))) {
-        ERR << "can't initialize magic library" << endl;
+/* Some old versions of libmagic don't support MAGIC_MIME_TYPE.
+ * But hey, if we have squid-3.1 we should probably also have an
+ * actual version of libmagic. Anyhow, use MAGIC_MIME instead.
+ */
+#ifndef MAGIC_MIME_TYPE
+    if (!(mcookie = magic_open(MAGIC_MIME)))
+#else
+    if (!(mcookie = magic_open(MAGIC_MIME_TYPE)))
+#endif
+    {
+        ERR << "can't initialize magic library, skiplists won't work!" << endl;
     } else if (-1 == magic_load(mcookie, magicdb.c_str())) {
-        ERR << "can't initialize magic database" << endl;
+        ERR << "can't initialize magic database, skiplists won't work!" << endl;
         magic_close(mcookie);
         mcookie = NULL;
     }
