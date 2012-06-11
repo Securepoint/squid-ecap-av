@@ -1,6 +1,6 @@
 /*
- * Securepoint eCAP clamd Adapter
- * Copyright (C) 2011 Gernot Tenchio, Securepoint GmbH, Germany.
+ * Securepoint eCAP antivirus Adapter
+ * Copyright (C) 2011, 2012 Gernot Tenchio, Securepoint GmbH, Germany.
  *
  * http://www.securepoint.de/
  *
@@ -39,6 +39,6 @@
 #define ERR cerr << __FUNCTION__ << "(), "
 
 #define TIMEOUT 5
-typedef enum { methNone, methInstream, methFildes } ScanMethod;
+typedef enum { engineAuto, engineClamav, engineCommtouch } ScanEngine;
 
 #endif

@@ -1,6 +1,6 @@
 /*
- * Securepoint eCAP clamd Adapter
- * Copyright (C) 2011 Gernot Tenchio, Securepoint GmbH, Germany.
+ * Securepoint eCAP antivirus Adapter
+ * Copyright (C) 2011, 2012 Gernot Tenchio, Securepoint GmbH, Germany.
  *
  * http://www.securepoint.de/
  *
@@ -85,6 +85,7 @@ private:
         int status;
         char *tempfn;
         char buf[BUFSIZ];
+        char avbuf[BUFSIZ];
     } *Ctx;
 
     std::string statusString;
@@ -92,9 +93,13 @@ private:
 
     libecap::Area ErrorPage(void);
     void avStart(void);
-    void avStartFildes(void);
-    void avStartInstream(void);
+    void avStartClamav(void);
+    void avStartCommtouch(void);
     void avWriteStream(void);
+    void avCheckVersion(void);
+    int  avScanResult(void);
+    int  avScanResultClamav(void);
+    int  avScanResultCommtouch(void);
     int  avReadResponse(void);
     int  avWriteCommand(const char *command);
     int  avWriteChunk(char *buf, ssize_t len);
@@ -102,6 +107,7 @@ private:
     bool mustScan(libecap::Area area);
     void noteContentAvailable(void);
 
+    ScanEngine engine;
     size_type received;
     size_type processed;
     size_type contentlength;

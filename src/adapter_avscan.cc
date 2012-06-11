@@ -1,6 +1,6 @@
 /*
- * Securepoint eCAP clamd Adapter
- * Copyright (C) 2011 Gernot Tenchio, Securepoint GmbH, Germany.
+ * Securepoint eCAP antivirus Adapter
+ * Copyright (C) 2011, 2012 Gernot Tenchio, Securepoint GmbH, Germany.
  *
  * http://www.securepoint.de/
  *
@@ -39,6 +39,7 @@
 #include <arpa/inet.h>	// htonl
 
 #include <fstream>
+#include <sstream>
 #include <iostream>
 #include <string>
 #include <cerrno>
@@ -140,10 +141,9 @@ int Adapter::Xaction::avWriteCommand(const char *command)
 
 int Adapter::Xaction::avReadResponse(void)
 {
-    char buf[1024];
     fd_set rfds;
     struct timeval tv;
-    int n;
+    int n, off = 0;
 
     FUNCENTER();
 
@@ -153,25 +153,125 @@ int Adapter::Xaction::avReadResponse(void)
     FD_ZERO(&rfds);
     FD_SET(Ctx->sockfd,&rfds);
 
-    if (-1 != (n = read(Ctx->sockfd, buf, sizeof(buf)))) {
-        /* looks good */
-    } else if (errno != EAGAIN) {
-        ERR << "read: " << strerror(errno) << endl;
-    } else if (-1 == select(Ctx->sockfd + 1, &rfds, NULL, NULL, &tv)) {
-        ERR << "select; " << strerror(errno) << endl;
-    } else if (!FD_ISSET(Ctx->sockfd, &rfds)) {
-        ERR << "timeout @ " << Ctx->sockfd << endl;
-        n = -2;
-    } else if (-1 == (n = read(Ctx->sockfd, buf, sizeof(buf)))) {
-        ERR << "read: " << strerror(errno) << endl;
+    while (1) {
+	n = -1;
+	if (-1 == select(Ctx->sockfd + 1, &rfds, NULL, NULL, &tv)) {
+	    ERR << "select; " << strerror(errno) << endl;
+	} else if (!FD_ISSET(Ctx->sockfd, &rfds)) {
+	    ERR << "timeout @ " << Ctx->sockfd << endl;
+	    n = -2;
+	} else if (-1 == (n = read(Ctx->sockfd, Ctx->avbuf + off, sizeof(Ctx->avbuf) - off))) {
+	    ERR << "read: " << strerror(errno) << endl;
+	} else if ((int)sizeof(Ctx->avbuf) <= (off += n)) {
+	    ERR << "buffer to small" << endl;
+	    n = -1;
+	} else if (Ctx->avbuf[off - 1] != '\0') {
+	    continue;
+	}
+	break;
+    }
+    return n;
+}
+
+void Adapter::Xaction::avStartCommtouch(void)
+{
+    FUNCENTER();
+
+    if (-1 == avWriteCommand("zINSTREAM")) {
+        Ctx->status = stError;
+    } else if (0 > avReadResponse()) {
+        Ctx->status = stError;
+    } else if (strcmp(Ctx->avbuf, "OK SEND_DATA")) {
+        Ctx->status = stError;
+    } else {
+	avWriteStream();
+    }
+}
+
+int Adapter::Xaction::avScanResultCommtouch(void)
+{
+    // 31:OK INFECTED 0xce24df2e EICAR_Test_File|Virus
+    //
+    // DAEMON_STATUS  :: OK
+    // SCANNER_STATUS :: INFECTED
+    // OBJECT         :: 0xce24df2e, CRC32 checksum of the stream
+    // MESSAGE        :: EICAR_Test_File|Virus
+
+    char *colon;
+    int n = avReadResponse();
+
+    if (n <= 0) {
+	/* */
+    } else if (NULL == (colon = strchr(Ctx->avbuf, ':'))) {
+	Ctx->status = stError;
+	statusString = "garbled response from AV-daemon";
+	ERR << "response from AV-daemon: " << "'" << Ctx->avbuf << "'" << endl;
+    } else {
+	istringstream iss(colon + 1);
+	string sstat, dstat, object;
+
+	iss >> dstat >> sstat >> object >> statusString;
+
+	// check daemon status
+	if (dstat == "FAIL") {
+	    Ctx->status = stError;
+	} else {
+	    // now check scanner status
+	    if (sstat == "CLEAN") {
+		/* */
+	    } else if (sstat == "INFECTED") {
+		Ctx->status = stInfected;
+	    }
+	}
+    }
+    return n;
+}
+
+void Adapter::Xaction::avStartClamav(void)
+{
+    struct iovec iov[1];
+    struct msghdr msg;
+    struct cmsghdr *cmsg;
+    unsigned char fdbuf[CMSG_SPACE(sizeof(int))];
+    char dummy[]="";
+
+    FUNCENTER();
+    if (-1 == avWriteCommand("zFILDES")) {
+        Ctx->status = stError;
+        return;
     }
 
+    iov[0].iov_base = dummy;
+    iov[0].iov_len = 1;
+    memset(&msg, 0, sizeof(msg));
+    msg.msg_control = fdbuf;
+    msg.msg_iov = iov;
+    msg.msg_iovlen = 1;
+    msg.msg_controllen = CMSG_LEN(sizeof(int));
+    cmsg = CMSG_FIRSTHDR(&msg);
+    cmsg->cmsg_len = CMSG_LEN(sizeof(int));
+    cmsg->cmsg_level = SOL_SOCKET;
+    cmsg->cmsg_type = SCM_RIGHTS;
+    *(int *)CMSG_DATA(cmsg) = Ctx->tempfd;
+    if(sendmsg(Ctx->sockfd, &msg, 0) == -1) {
+        ERR << "FD send failed: " << strerror(errno) << endl;
+        Ctx->status = stError;
+    }
+}
+
+int Adapter::Xaction::avScanResultClamav(void)
+{
+    FUNCENTER();
+
+    int n = avReadResponse();
+
     if (n > 0) {
-	char *colon = strrchr(buf, ':');
-	char *eol = buf + n;
+	char *colon = strrchr(Ctx->avbuf, ':');
+	char *eol = Ctx->avbuf + n;
 	if(!colon) {
 	    Ctx->status = stError;
 	    statusString = "garbled response from AV-daemon";
+	    ERR << "response from AV-daemon: " << "'" << Ctx->avbuf << "'" << endl;
 	} else if(!memcmp(eol - 7, " FOUND", 6)) {
 	    Ctx->status = stInfected;
 	    statusString = ++colon;
@@ -204,6 +304,37 @@ static int doconnect(std::string aPath)
         fcntl(sockfd, F_SETFL, fcntl(sockfd, F_GETFL) | O_NONBLOCK);
     }
     return sockfd;
+}
+
+int Adapter::Xaction::avScanResult(void)
+{
+    int ret = -1;
+    if (engine == engineCommtouch) {
+	ret = avScanResultCommtouch();
+    } else {
+	ret = avScanResultClamav();
+    }
+    return ret;
+}
+
+void Adapter::Xaction::avStart(void)
+{
+
+    FUNCENTER();
+
+    if (engine == engineAuto)
+	avCheckVersion();
+
+    if (stError == Ctx->status) {
+	/* */
+    } else if (-1 == (Ctx->sockfd = doconnect(service->avdsocket))) {
+        Ctx->status = stError;
+    } else if (engine == engineCommtouch) {
+	avStartCommtouch();
+    } else {
+	avStartClamav();
+    }
+
 }
 
 int Adapter::Xaction::avWriteChunk(char *buf, ssize_t len)
@@ -248,67 +379,34 @@ void Adapter::Xaction::avWriteStream(void)
     }
 }
 
-void Adapter::Xaction::avStartFildes(void)
-{
-    struct iovec iov[1];
-    struct msghdr msg;
-    struct cmsghdr *cmsg;
-    unsigned char fdbuf[CMSG_SPACE(sizeof(int))];
-    char dummy[]="";
-
-    FUNCENTER();
-    if (-1 == avWriteCommand("zFILDES")) {
-        Ctx->status = stError;
-        return;
-    }
-
-    iov[0].iov_base = dummy;
-    iov[0].iov_len = 1;
-    memset(&msg, 0, sizeof(msg));
-    msg.msg_control = fdbuf;
-    msg.msg_iov = iov;
-    msg.msg_iovlen = 1;
-    msg.msg_controllen = CMSG_LEN(sizeof(int));
-    cmsg = CMSG_FIRSTHDR(&msg);
-    cmsg->cmsg_len = CMSG_LEN(sizeof(int));
-    cmsg->cmsg_level = SOL_SOCKET;
-    cmsg->cmsg_type = SCM_RIGHTS;
-    *(int *)CMSG_DATA(cmsg) = Ctx->tempfd;
-    if(sendmsg(Ctx->sockfd, &msg, 0) == -1) {
-        ERR << "FD send failed: " << strerror(errno) << endl;
-        Ctx->status = stError;
-    }
-}
-
-void Adapter::Xaction::avStartInstream(void)
+void Adapter::Xaction::avCheckVersion(void)
 {
     FUNCENTER();
-    if (-1 == avWriteCommand("zINSTREAM")) {
+
+    if (-1 == (Ctx->sockfd = doconnect(service->avdsocket))) {
         Ctx->status = stError;
+	return;
+    } else if (-1 == avWriteCommand("zVERSION")) {
+        Ctx->status = stError;
+    } else if (-1 == avReadResponse()) {
+	Ctx->status = stError;
     } else {
-	avWriteStream();
+	if (0 == strncasecmp(Ctx->avbuf, "clamav", 6)) {
+	    engine = engineClamav;
+	} else {
+	    // commtouch csamd doesn't return a name
+	    engine = engineCommtouch;
+	}
     }
+    close(Ctx->sockfd);
 }
 
-void Adapter::Xaction::avStart(void)
-{
-
-    FUNCENTER();
-
-    if (-1 == (Ctx->sockfd = doconnect(service->clamdsocket))) {
-        Ctx->status = stError;
-    } else if (service->method == methInstream) {
-	avStartInstream();
-    } else {
-	avStartFildes();
-    }
-
-}
-
+// constructor
 Adapter::Xaction::Xaction(libecap::shared_ptr < Service > aService, libecap::host::Xaction * x):service(aService), hostx(x),
     receivingVb(opUndecided),
     sendingAb(opUndecided)
 {
+    engine = engineAuto;
     received = processed = 0;
     trickled = senderror = bypass = false;
 }
@@ -513,7 +611,7 @@ void Adapter::Xaction::noteVbContentDone(UNUSED bool atEnd)
 	receivingVb = opScanning;
 	avStart();
 	if (Ctx->status == stOK) {
-	    while (-2 == avReadResponse())
+	    while (-2 == avScanResult())
 		noteContentAvailable();
 	}
 	receivingVb = opComplete;
@@ -565,7 +663,7 @@ void Adapter::Xaction::noteVbContentAvailable()
                 contentlength = strtoul(value.start, NULL, 10);
                 if (contentlength > service->maxscansize) {
                     bypass = 1;
-		    cerr << "Content-Length " << value.start << " exceeds max scansize: skipping" << endl;
+		    ERR << "Content-Length " << value.start << " exceeds max scansize: skipping" << endl;
 		}
             }
         }
@@ -587,8 +685,8 @@ void Adapter::Xaction::noteVbContentAvailable()
     lseek(Ctx->tempfd, 0, SEEK_END);
 
     // write body to temp file
-    if (vb.size != write(Ctx->tempfd, vb.start, vb.size)) {
-        cerr << "can't write to temp file\n";
+    if ((int)vb.size != write(Ctx->tempfd, vb.start, vb.size)) {
+        ERR << "can't write to temp file\n";
         Ctx->status = stError;
 	return;
     }

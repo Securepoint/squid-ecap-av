@@ -1,6 +1,6 @@
 /*
- * Securepoint eCAP clamd Adapter
- * Copyright (C) 2011 Gernot Tenchio, Securepoint GmbH, Germany.
+ * Securepoint eCAP antivirus Adapter
+ * Copyright (C) 2011, 2012 Gernot Tenchio, Securepoint GmbH, Germany.
  *
  * http://www.securepoint.de/
  *
@@ -132,22 +132,6 @@ void Adapter::Service::describe(std::ostream & os) const
     os << ADAPTERNAME;
 }
 
-static ScanMethod parseMeth(std::string aMethod)
-{
-    ScanMethod meth = methFildes;
-
-    transform(aMethod.begin(), aMethod.end(), aMethod.begin(), ::tolower);
-
-    if (aMethod == "fildes") {
-	/* */
-    } else if (aMethod == "instream") {
-	meth = methInstream;
-    } else {
-        ERR << "invalid scan method, falling back to FILDES" << endl;
-    }
-    return meth;
-}
-
 void Adapter::Service::readconfig(std::string aPath)
 {
     FUNCENTER();
@@ -176,16 +160,14 @@ void Adapter::Service::readconfig(std::string aPath)
             } else if (key == "tricklesize") {
                 if (0 >= (tricklesize = atoi(val.c_str())))
                     tricklesize = 1;
-            } else if (key == "clamdsocket") {
-                clamdsocket = val;
+            } else if (key == "avdsocket") {
+                avdsocket = val;
             } else if (key == "magicdb") {
                 magicdb = val;
             } else if (key == "tempdir") {
                 tempdir = val;
             } else if (key == "skiplist") {
                 skiplist = val;
-            } else if (key == "method") {
-		method = parseMeth(val);
 	    }
         }
         in.close();
@@ -219,14 +201,13 @@ void Adapter::Service::start()
     FUNCENTER();
     libecap::adapter::Service::start();
 
-    clamdsocket = "/tmp/clamd.sock";
+    avdsocket = "/tmp/clamd.sock";
     magicdb     = "/usr/share/misc/magic.mgc";
     skiplist    = "/etc/squid/ecap_adapter_av.skip";
     tempdir     = "/var/tmp";
     maxscansize = 0;
     trickletime = 30;
     tricklesize = 10;
-    method      = methFildes;
 
     readconfig(configfn);
 

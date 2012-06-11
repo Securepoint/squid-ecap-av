@@ -1,6 +1,7 @@
-  * new config option 'method' (fildes|instream)
+  * renamed option 'clamdsocket' to 'avdsocket'
   * added abbility to scan files via INSTREAM command
   * lots of small improvements
+  * fix building with older versions of libmagic
 
 version 1.0.5
 

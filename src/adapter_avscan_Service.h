@@ -1,6 +1,6 @@
 /*
- * Securepoint eCAP clamd Adapter
- * Copyright (C) 2011 Gernot Tenchio, Securepoint GmbH, Germany.
+ * Securepoint eCAP antivirus Adapter
+ * Copyright (C) 2011, 2012 Gernot Tenchio, Securepoint GmbH, Germany.
  *
  * http://www.securepoint.de/
  *
@@ -75,9 +75,8 @@ public:
     virtual libecap::adapter::Xaction * makeXaction(libecap::host::Xaction * hostx);
 
     // Config
-    ScanMethod method;       // method to use (INSTREAM or FILDES)
     SkipList *skipList;      // list of mimetypes to exclude from scanning
-    std::string clamdsocket; // path to clamd socket
+    std::string avdsocket;   // path to the AV daemon socket
     std::string magicdb;     // magic database location
     std::string skiplist;    // skiplist file
     std::string tempdir;     // directory to store temp files in
