@@ -193,6 +193,10 @@ void Adapter::Xaction::avStartCommtouch(void)
     }
 }
 
+// Returns:
+//  -1: Error
+//  -2: Timeout reading from AV-socket
+//   positive number: scan succeeded, status is reported via Ctx->status
 int Adapter::Xaction::avScanResultCommtouch(void)
 {
     // 31:OK INFECTED 0xce24df2e EICAR_Test_File|Virus
@@ -290,6 +294,9 @@ int Adapter::Xaction::avScanResultClamav(void)
     return n;
 }
 
+// Create a socket and connect it to aPath. If the connect() succeeds
+// set the so created socket to nonblocking mode. If aPath.length()
+// exceeds sizeof(address.sun_path) connect() returns ENOENT.
 static int doconnect(std::string aPath)
 {
     int sockfd = -1;
@@ -609,6 +616,7 @@ void Adapter::Xaction::noteContentAvailable()
 }
 
 // finished reading the virgin body
+// if 'bypass' is set everything is fine, otherwise start scanning
 void Adapter::Xaction::noteVbContentDone(UNUSED bool atEnd)
 {
     FUNCENTER();
@@ -629,6 +637,9 @@ void Adapter::Xaction::noteVbContentDone(UNUSED bool atEnd)
     noteContentAvailable();
 }
 
+// 'bypass' will be set to 1 in noteVbContentAvailable() if received >= maxscansize
+// 'startTime' is set in Adapter::Xaction::start
+// 'lastContent' will be updated everytime Adapter::Xaction::abContent gets called
 void Adapter::Xaction::processContent()
 {
     time_t now = time(NULL);
@@ -638,10 +649,11 @@ void Adapter::Xaction::processContent()
     if (bypass) {
         noteContentAvailable();
     } else if (now < (startTime + service->trickletime)) {
-        /* */
+        // maybe there is a chance to report an error to the client
     } else if (now < (lastContent + service->trickletime)) {
-        /* */
+        // wait trickletime
     } else {
+	// time to send some bits
         noteContentAvailable();
     }
 }
