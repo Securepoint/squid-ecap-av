@@ -65,11 +65,11 @@ libecap::Area Adapter::Xaction::ErrorPage(void)
     if (Ctx->status == stInfected) {
         errmsg += "<h1>Access denied!</h1>";
         errmsg += "You've tried to upload/download a file that contains the virus ";
-        errmsg += "<b>" + statusString + "</b>.";
     } else {
         errmsg += "<h1>Internal error!</h1>";
         errmsg += "While scanning your request for virus infection an internal error occured!";
     }
+    errmsg += "<blockquote>" + statusString + ".</blockquote>";
     errmsg += "</body></html>\n";
     return libecap::Area::FromTempString(errmsg);
 }
@@ -100,7 +100,8 @@ void Adapter::Xaction::openTempfile(void)
 
     snprintf(fn, PATH_MAX - 1, "%s/squid-ecap-XXXXXX", service->tempdir.c_str());
     if (-1 == (Ctx->tempfd = mkstemp((char *)fn))) {
-        ERR << "can't open temp file " << fn << endl;
+        statusString = "can't open temp file: ";
+        statusString += strerror(errno);
         Ctx->status = stError;
         return;
     }
@@ -127,11 +128,13 @@ int Adapter::Xaction::avWriteCommand(const char *command)
     if (n == write(Ctx->sockfd, command, n)) {
         return n;
     } else if (n == -1 && errno != EAGAIN) {
-        ERR << "write: " << strerror(errno) << endl;
+        statusString = "can't write to AV-daemon socket: ";
+        statusString += strerror(errno);
     } else if (-1 == select(Ctx->sockfd + 1, NULL, &wfds, NULL, &tv)) {
-        ERR << "select: " << strerror(errno) << endl;
+        statusString = "AV-daemon socket select failed: ";
+        statusString += strerror(errno);
     } else if (!(FD_ISSET(Ctx->sockfd, &wfds))) {
-        ERR << "timeout @ " << Ctx->sockfd << endl;
+        statusString = "AV-daemon socket timeout";
     } else {
         // write the trailing NULL character too
         return write(Ctx->sockfd, command, n);
@@ -156,14 +159,16 @@ int Adapter::Xaction::avReadResponse(void)
     while (1) {
 	n = -1;
 	if (-1 == select(Ctx->sockfd + 1, &rfds, NULL, NULL, &tv)) {
-	    ERR << "select; " << strerror(errno) << endl;
+	    statusString = "AV-daemon socket select failed: ";
+	    statusString += strerror(errno);
 	} else if (!FD_ISSET(Ctx->sockfd, &rfds)) {
-	    ERR << "timeout @ " << Ctx->sockfd << endl;
+	    statusString = "AV-daemon socket timeout";
 	    n = -2;
 	} else if (-1 == (n = read(Ctx->sockfd, Ctx->avbuf + off, sizeof(Ctx->avbuf) - off))) {
-	    ERR << "read: " << strerror(errno) << endl;
+	    statusString = "can't read from AV-daemon socket: ";
+	    statusString += strerror(errno);
 	} else if ((int)sizeof(Ctx->avbuf) <= (off += n)) {
-	    ERR << "buffer to small" << endl;
+	    statusString = "AV-buffer to small";
 	    n = -1;
 	} else if (Ctx->avbuf[off - 1] != '\0') {
 	    continue;
@@ -205,7 +210,6 @@ int Adapter::Xaction::avScanResultCommtouch(void)
     } else if (NULL == (colon = strchr(Ctx->avbuf, ':'))) {
 	Ctx->status = stError;
 	statusString = "garbled response from AV-daemon";
-	ERR << "response from AV-daemon: " << "'" << Ctx->avbuf << "'" << endl;
     } else {
 	istringstream iss(colon + 1);
 	string sstat, dstat, object;
@@ -220,6 +224,7 @@ int Adapter::Xaction::avScanResultCommtouch(void)
 	    if (sstat == "CLEAN") {
 		/* */
 	    } else if (sstat == "INFECTED") {
+		statusString.resize(statusString.rfind("|"));
 		Ctx->status = stInfected;
 	    }
 	}
@@ -254,7 +259,8 @@ void Adapter::Xaction::avStartClamav(void)
     cmsg->cmsg_type = SCM_RIGHTS;
     *(int *)CMSG_DATA(cmsg) = Ctx->tempfd;
     if(sendmsg(Ctx->sockfd, &msg, 0) == -1) {
-        ERR << "FD send failed: " << strerror(errno) << endl;
+        statusString = "FD send failed: ";
+        statusString += strerror(errno);
         Ctx->status = stError;
     }
 }
@@ -271,7 +277,6 @@ int Adapter::Xaction::avScanResultClamav(void)
 	if(!colon) {
 	    Ctx->status = stError;
 	    statusString = "garbled response from AV-daemon";
-	    ERR << "response from AV-daemon: " << "'" << Ctx->avbuf << "'" << endl;
 	} else if(!memcmp(eol - 7, " FOUND", 6)) {
 	    Ctx->status = stInfected;
 	    statusString = ++colon;
@@ -289,15 +294,12 @@ static int doconnect(std::string aPath)
 {
     int sockfd = -1;
 
-    if ((sockfd = socket(AF_LOCAL, SOCK_STREAM, 0)) == -1) {
-        ERR << "can't initialize AV-daemon socket: " << strerror(errno) << endl;
-    } else {
+    if (-1 != (sockfd = socket(AF_LOCAL, SOCK_STREAM, 0))) {
         struct sockaddr_un address;
         memset(&address, 0, sizeof(address));
         address.sun_family = AF_LOCAL;
         strncpy(address.sun_path, aPath.c_str(), sizeof(address.sun_path));
         if (connect(sockfd, (struct sockaddr *) &address, sizeof(address)) == -1) {
-            ERR << "can't connect to AV-daemon socket: " << strerror(errno) << endl;
             close(sockfd);
             sockfd = -1;
         }
@@ -365,10 +367,12 @@ void Adapter::Xaction::avWriteStream(void)
 	Ctx->status = stError;
     } else while (1) {
 	if (-1 == (len = read(Ctx->tempfd, buf, BUFSIZ))) {
-	    ERR << "read from tempfile failed: " << strerror(errno) << endl;
+	    statusString = "read from tempfile failed: ";
+	    statusString += strerror(errno);
 	    Ctx->status = stError;
 	} else if (-1 == avWriteChunk(buf, len)) {
-	    ERR << "write to AV-daemon failed: " << strerror(errno) << endl;
+	    statusString = "write to AV-daemon failed: ";
+	    statusString += strerror(errno);
 	    Ctx->status = stError;
 	} else if (!len) {
 	    /* */
@@ -384,6 +388,8 @@ void Adapter::Xaction::avCheckVersion(void)
     FUNCENTER();
 
     if (-1 == (Ctx->sockfd = doconnect(service->avdsocket))) {
+        statusString = "can't initialize AV-daemon socket: ";
+        statusString += strerror(errno);
         Ctx->status = stError;
 	return;
     } else if (-1 == avWriteCommand("zVERSION")) {
@@ -409,11 +415,14 @@ Adapter::Xaction::Xaction(libecap::shared_ptr < Service > aService, libecap::hos
     engine = engineAuto;
     received = processed = 0;
     trickled = senderror = bypass = false;
+    statusString = "OK";
 }
 
 Adapter::Xaction::~Xaction()
 {
     FUNCENTER();
+
+    ERR << statusString << endl;
 
     if (Ctx) {
         if (-1 != Ctx->sockfd)
@@ -542,8 +551,9 @@ libecap::Area Adapter::Xaction::abContent(UNUSED size_type offset, UNUSED size_t
     lseek(Ctx->tempfd, processed, SEEK_SET);
 
     if ((size_type)-1 == (sz = (size_type)read(Ctx->tempfd, Ctx->buf,  sz))) {
-        ERR << "can't read from temp file: " << strerror(errno) << endl;
-        Ctx->status = stError;
+        statusString = "can't read from temp file: ";
+	statusString += strerror(errno);
+	Ctx->status = stError;
         return libecap::Area::FromTempString("");
     }
 
@@ -686,9 +696,10 @@ void Adapter::Xaction::noteVbContentAvailable()
 
     // write body to temp file
     if ((int)vb.size != write(Ctx->tempfd, vb.start, vb.size)) {
-        ERR << "can't write to temp file\n";
+        statusString = "can't write to temp file: ";
+        statusString += strerror(errno);
         Ctx->status = stError;
-	return;
+        return;
     }
 
     received += vb.size;
