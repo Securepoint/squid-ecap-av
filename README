@@ -7,7 +7,8 @@ About
 Securepoint eCAP antivirus adapter is an loadable eCAP adapter for the
 popular Squid HTTP-Proxy which allows you to scan all traffic going through
 for known viruses. Currently the only supported virus scan engines are
-clamav and commtouch csamd.
+clamav and commtouch csamd. The very latest version can be downloaded @
+https://sourceforge.net/projects/squid-ecap-av/files/latest/download[sourceforge.net].
 
 Development of this adapter started in March 2011 because nothing comparable
 could be found at this time. In the meantime (2011-03-17) at least one similar
