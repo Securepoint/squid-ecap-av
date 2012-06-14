@@ -26,6 +26,8 @@
 #include <algorithm>
 #include <string>
 #include <cerrno>
+#include <climits>
+#include <cstring>
 
 #include <libecap/common/registry.h>
 #include <libecap/common/errors.h>
@@ -132,6 +134,33 @@ void Adapter::Service::describe(std::ostream & os) const
     os << ADAPTERNAME;
 }
 
+static libecap::size_type parseunit(std::string s, std::string name)
+{
+    char *unit;
+    libecap::size_type size, calculated;
+
+    if (ULONG_MAX == (size = strtoul(s.c_str(), &unit, 10))) {
+	ERR << name << " value '" << s << "'to large, using " << size << " instead" << endl;
+	return size;
+    }
+
+    // skip spaces if any
+    while (' ' == *unit) unit++;
+    if (strncmp(unit, "KB", 2))
+	calculated = size * 1024;
+    else if (strncmp(unit, "MB", 2))
+	calculated = size * 1024 * 1024;
+    else
+	calculated = size;
+
+    // check for integer overflow
+    if (calculated < size) {
+	ERR << "integer overflow, ignoring unit, using " << size << " instead" << endl;
+	calculated = size;
+    }
+    return calculated;
+}
+
 void Adapter::Service::readconfig(std::string aPath)
 {
     FUNCENTER();
@@ -154,7 +183,7 @@ void Adapter::Service::readconfig(std::string aPath)
             val = line.substr(rm[3].rm_so, rm[3].rm_eo - rm[3].rm_so);
 
             if (key == "maxscansize") {
-                maxscansize = strtoul(val.c_str(), NULL, 10);
+                maxscansize = parseunit(val, "maxscansize");
             } else if (key == "trickletime") {
                 trickletime = strtoul(val.c_str(), NULL, 10);
             } else if (key == "tricklesize") {
