@@ -40,6 +40,7 @@
 
 #include "adapter_avscan_Service.h"
 #include "adapter_avscan_Xaction.h"
+#include "adapter_avscan_Logger.h"
 #include "adapter_avscan.h"
 
 using namespace std;
@@ -62,13 +63,12 @@ Adapter::SkipList::SkipList(std::string aPath)
         }
         in.close();
     } else {
-        ERR << "can't open " << aPath << endl;
+	Logger(ilCritical|flApplication) << "can't open " << aPath;
     }
 }
 
 Adapter::SkipList::~SkipList()
 {
-    ERR << "placebo alert!" << endl;
 }
 
 void Adapter::SkipList::add(std::string s)
@@ -83,7 +83,7 @@ void Adapter::SkipList::add(std::string s)
     } else if (!(regex = new regex_t)) {
         /* oom */
     } else if (0 != regcomp(regex, s.c_str(), REG_EXTENDED | REG_NOSUB)) {
-        ERR << "invalid regular expression @ " << linenumber << endl;
+	Logger(ilCritical|flApplication) << "invalid regular expression @ " << linenumber;
     } else if (!(entry = new (struct skipListEntry))) {
         /* oom */
     } else {
@@ -140,7 +140,7 @@ static libecap::size_type parseunit(std::string s, std::string name)
     libecap::size_type size, calculated;
 
     if (ULONG_MAX == (size = strtoul(s.c_str(), &unit, 10))) {
-	ERR << name << " value '" << s << "'to large, using " << size << " instead" << endl;
+	Logger(ilCritical|flApplication) << name << " value '" << s << "' to large, using " << size << " instead";
 	return size;
     }
 
@@ -155,7 +155,7 @@ static libecap::size_type parseunit(std::string s, std::string name)
 
     // check for integer overflow
     if (calculated < size) {
-	ERR << "integer overflow, ignoring unit, using " << size << " instead" << endl;
+	Logger(ilCritical|flApplication) << "integer overflow, ignoring unit, using " << size << " instead";
 	calculated = size;
     }
     return calculated;
@@ -201,7 +201,7 @@ void Adapter::Service::readconfig(std::string aPath)
         }
         in.close();
     } else {
-        ERR << "can't open " << aPath << endl;
+	Logger(ilCritical|flApplication) << "can't open " << aPath;
     }
 }
 
@@ -228,6 +228,7 @@ void Adapter::Service::reconfigure(UNUSED const libecap::Options &cfg)
 void Adapter::Service::start()
 {
     FUNCENTER();
+
     libecap::adapter::Service::start();
 
     avdsocket = "/tmp/clamd.sock";
@@ -250,13 +251,14 @@ void Adapter::Service::start()
     if (!(mcookie = magic_open(MAGIC_MIME_TYPE)))
 #endif
     {
-        ERR << "can't initialize magic library, skiplists won't work!" << endl;
+	Logger(ilCritical|flApplication) << "can't initialize magic library, skiplists won't work!";
     } else if (-1 == magic_load(mcookie, magicdb.c_str())) {
-        ERR << "can't initialize magic database, skiplists won't work!" << endl;
+	Logger(ilCritical|flApplication) << "can't load magic database, skiplists won't work!";
         magic_close(mcookie);
         mcookie = NULL;
     }
     skipList = new Adapter::SkipList(skiplist);
+    Logger(flApplication) << ADAPTERNAME << " started";
 }
 
 void Adapter::Service::stop()

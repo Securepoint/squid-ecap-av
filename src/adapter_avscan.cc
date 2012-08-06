@@ -55,6 +55,7 @@
 
 #include "adapter_avscan_Service.h"
 #include "adapter_avscan_Xaction.h"
+#include "adapter_avscan_Logger.h"
 #include "adapter_avscan.h"
 
 using namespace std;
@@ -283,11 +284,11 @@ int Adapter::Xaction::avScanResultClamav(void)
 	    statusString = "garbled response from AV-daemon";
 	} else if(!memcmp(eol - 7, " FOUND", 6)) {
 	    Ctx->status = stInfected;
-	    statusString = ++colon;
+	    statusString = colon + 2;
 	    statusString.resize(statusString.size() - 6);
 	} else if(!memcmp(eol - 7, " ERROR", 6)) {
 	    Ctx->status = stError;
-	    statusString = ++colon;
+	    statusString = colon + 2;
 	    statusString.resize(statusString.size() - 6);
 	}
     }
@@ -429,7 +430,10 @@ Adapter::Xaction::~Xaction()
 {
     FUNCENTER();
 
-    ERR << statusString << endl;
+    if (Ctx->status == stInfected)
+	Logger(ilCritical|flXaction) << "INFECTED, " << statusString;
+    else if (statusString != "OK")
+	Logger(ilCritical|flXaction) << statusString;
 
     if (Ctx) {
         if (-1 != Ctx->sockfd)
@@ -685,7 +689,7 @@ void Adapter::Xaction::noteVbContentAvailable()
                 contentlength = strtoul(value.start, NULL, 10);
                 if (contentlength > service->maxscansize) {
                     bypass = 1;
-		    ERR << "Content-Length " << value.start << " exceeds max scansize: skipping" << endl;
+		    Logger(libecap::flXaction) << "Content-Length " << contentlength << " exceeds max scansize: skipping";
 		}
             }
         }
