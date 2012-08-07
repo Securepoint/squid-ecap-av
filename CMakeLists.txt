@@ -1,7 +1,7 @@
 CMAKE_MINIMUM_REQUIRED(VERSION 2.4)
 PROJECT(squid-ecap-av CXX)
 
-SET(PACKAGE_VERSION "1.0.6-pre1")
+SET(PACKAGE_VERSION "1.0.6-pre2")
 SET(CMAKE_CXX_FLAGS "-W -Wall -DPACKAGE_VERSION=\\\"${PACKAGE_VERSION}\\\"")
 SET(MODDIR "${CMAKE_INSTALL_PREFIX}/libexec/squid/" CACHE PATH "Directory to install the eCAP adapater to.")
 SET(DOCDIR "${CMAKE_INSTALL_PREFIX}/share/doc/squid-ecap-av-${PACKAGE_VERSION}" CACHE PATH "Directory to install the documentation to.")
