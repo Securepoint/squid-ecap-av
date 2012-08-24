@@ -430,12 +430,12 @@ Adapter::Xaction::~Xaction()
 {
     FUNCENTER();
 
-    if (Ctx->status == stInfected)
-	Logger(ilCritical|flXaction) << "INFECTED, " << statusString;
-    else if (statusString != "OK")
-	Logger(ilCritical|flXaction) << statusString;
-
     if (Ctx) {
+	if (Ctx->status == stInfected)
+	    Logger(ilCritical|flXaction) << "INFECTED, " << statusString;
+	else if (statusString != "OK")
+	    Logger(ilCritical|flXaction) << statusString;
+
         if (-1 != Ctx->sockfd)
             close(Ctx->sockfd);
 
