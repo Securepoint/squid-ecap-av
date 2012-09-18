@@ -146,9 +146,9 @@ static libecap::size_type parseunit(std::string s, std::string name)
 
     // skip spaces if any
     while (' ' == *unit) unit++;
-    if (strncmp(unit, "KB", 2))
+    if (0 == strncmp(unit, "KB", 2))
 	calculated = size * 1024;
-    else if (strncmp(unit, "MB", 2))
+    else if (0 == strncmp(unit, "MB", 2))
 	calculated = size * 1024 * 1024;
     else
 	calculated = size;
