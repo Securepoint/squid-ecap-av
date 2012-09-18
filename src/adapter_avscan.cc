@@ -77,7 +77,7 @@ libecap::Area Adapter::Xaction::ErrorPage(void)
 
 /**
  * Determines if we should scan or not.
-  */
+ */
 bool Adapter::Xaction::mustScan(libecap::Area area)
 {
     FUNCENTER();
@@ -132,10 +132,10 @@ int Adapter::Xaction::avWriteCommand(const char *command)
         statusString = "can't write to AV-daemon socket: ";
         statusString += strerror(errno);
     } else if (-1 == select(Ctx->sockfd + 1, NULL, &wfds, NULL, &tv)) {
-        statusString = "AV-daemon socket select failed: ";
+        statusString = "AV-daemon (w)socket select failed: ";
         statusString += strerror(errno);
     } else if (!(FD_ISSET(Ctx->sockfd, &wfds))) {
-        statusString = "AV-daemon socket timeout";
+        statusString = "AV-daemon (w)socket timeout";
     } else {
         // write the trailing NULL character too
         return write(Ctx->sockfd, command, n);
@@ -160,10 +160,10 @@ int Adapter::Xaction::avReadResponse(void)
     while (1) {
 	n = -1;
 	if (-1 == select(Ctx->sockfd + 1, &rfds, NULL, NULL, &tv)) {
-	    statusString = "AV-daemon socket select failed: ";
+	    statusString = "AV-daemon (r)socket select failed: ";
 	    statusString += strerror(errno);
 	} else if (!FD_ISSET(Ctx->sockfd, &rfds)) {
-	    statusString = "AV-daemon socket timeout";
+	    statusString = "AV-daemon (r)socket timeout";
 	    n = -2;
 	} else if (-1 == (n = read(Ctx->sockfd, Ctx->avbuf + off, sizeof(Ctx->avbuf) - off))) {
 	    statusString = "can't read from AV-daemon socket: ";
