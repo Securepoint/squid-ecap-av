@@ -599,9 +599,15 @@ void Adapter::Xaction::noteContentAvailable()
 
             const libecap::Name name("Content-Type");
             const libecap::Name disp("Content-Disposition");
+            const libecap::Name cenc("Content-Encoding");
+            const libecap::Name tran("Content-Transfer-Encoding");
             const libecap::Header::Value value = libecap::Area::FromTempString("text/html");
+
             adapted->header().removeAny(disp);
             adapted->header().removeAny(name);
+            adapted->header().removeAny(cenc);
+            adapted->header().removeAny(tran);
+
             adapted->header().add(name, value);
 
             if (statusLine)
