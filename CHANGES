@@ -1,3 +1,6 @@
+  * support units for 'maxscansize' config option
+  * remove Content-*Encoding headers before sending an error page,
+    this fixes the firefox Content-Encoding issue
   * renamed option 'clamdsocket' to 'avdsocket'
   * added abbility to scan files via INSTREAM command
   * lots of small improvements

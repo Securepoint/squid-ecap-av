@@ -140,6 +140,8 @@ A note for Firefox Users
 How to solve "Content Encoding Error" on firefox?
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+This issue is fixed since *v1.0.6pre5*. Nervertheless for the record:
+
 From http://answers.yahoo.com/question/index?qid=20100804010634AAxaUGD
 
 * In the address bar type *about:config*
@@ -149,3 +151,5 @@ From http://answers.yahoo.com/question/index?qid=20100804010634AAxaUGD
 * Click in the value column and type *true*
 
 We are working on this issue, but currently we have no idea what happens. :-(
+
+vim:set ft=asciidoc:
