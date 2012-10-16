@@ -82,7 +82,7 @@ void Adapter::SkipList::add(std::string s)
         /* comment */
     } else if (!(regex = new regex_t)) {
         /* oom */
-    } else if (0 != regcomp(regex, s.c_str(), REG_EXTENDED | REG_NOSUB)) {
+    } else if (0 != regcomp(regex, s.c_str(), REG_EXTENDED | REG_NOSUB | REG_ICASE)) {
 	Logger(ilCritical|flApplication) << "invalid regular expression @ " << linenumber;
     } else if (!(entry = new (struct skipListEntry))) {
         /* oom */
