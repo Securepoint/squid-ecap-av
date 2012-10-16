@@ -405,12 +405,17 @@ void Adapter::Xaction::avCheckVersion(void)
     } else if (-1 == avReadResponse()) {
 	Ctx->status = stError;
     } else {
+	int major, minor; char s[256];
+
 	if (0 == strncasecmp(Ctx->avbuf, "clamav", 6)) {
 	    engine = engineClamav;
-	} else {
 	    // commtouch csamd doesn't return a name
-	    engine = engineCommtouch;
+	} else if (6 == sscanf(Ctx->avbuf, "[%d.%d|%[.0-9]|%[.0-9]|%[0-9]|%[0-9]]", &major, &minor, s, s, s, s)) {
+	    engine = minor >= 13 ? engineClamav : engineCommtouch;
+	} else {
+	    Ctx->status = stError;
 	}
+
     }
     close(Ctx->sockfd);
 }
