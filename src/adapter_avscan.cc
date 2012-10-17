@@ -272,24 +272,39 @@ void Adapter::Xaction::avStartClamav(void)
 
 int Adapter::Xaction::avScanResultClamav(void)
 {
+    // Clamav:
+    //  'fd[10]: Eicar-Test-Signature FOUND'
+    //  'fd[10]: OK'
+    // Commtouch (broken UseClamdResponseFormat)
+    //  ': EICAR_Test_File|Virus FOUND'
+    //	' OK'
+
     FUNCENTER();
 
     int n = avReadResponse();
 
     if (n > 0) {
-	char *colon = strrchr(Ctx->avbuf, ':');
+	char *start;
 	char *eol = Ctx->avbuf + n;
-	if(!colon) {
-	    Ctx->status = stError;
-	    statusString = "garbled response from AV-daemon";
+
+	if (NULL == (start = strrchr(Ctx->avbuf, ':')))
+	    start = Ctx->avbuf;
+	else
+	    start += 2;
+
+	if(!memcmp(eol - 4, " OK", 3)) {
+	    /* :-) */
 	} else if(!memcmp(eol - 7, " FOUND", 6)) {
 	    Ctx->status = stInfected;
-	    statusString = colon + 2;
+	    statusString = start;
 	    statusString.resize(statusString.size() - 6);
 	} else if(!memcmp(eol - 7, " ERROR", 6)) {
 	    Ctx->status = stError;
-	    statusString = colon + 2;
+	    statusString = start;
 	    statusString.resize(statusString.size() - 6);
+	} else {
+	    Ctx->status = stError;
+	    statusString = "garbled response from AV-daemon";
 	}
     }
     return n;
