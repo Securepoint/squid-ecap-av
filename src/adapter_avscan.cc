@@ -565,7 +565,7 @@ libecap::Area Adapter::Xaction::abContent(UNUSED size_type offset, UNUSED size_t
         trickled = false;
 
         // finished sending?
-        if (processed >= received) {
+        if (processed >= received && receivingVb == opComplete) {
             sendingAb = opComplete;
             hostx->noteAbContentDone(true);
         }
