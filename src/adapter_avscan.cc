@@ -538,6 +538,19 @@ void Adapter::Xaction::abMakeMore()
 void Adapter::Xaction::abStopMaking()
 {
     FUNCENTER();
+    if (-1 != Ctx->sockfd) {
+      if (0 == close(Ctx->sockfd))
+	Ctx->sockfd = -1;
+      else
+	Logger(ilCritical|flXaction) << "Error closing socket";
+    }
+    if (-1 != Ctx->tempfd) {
+      if (0 == close(Ctx->tempfd))
+	Ctx->tempfd = -1;
+      else
+	Logger(ilCritical|flXaction) << "Error closing tempfile";
+    }
+
     sendingAb = opComplete;
     stopVb();
 }
