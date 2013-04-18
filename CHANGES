@@ -1,10 +1,15 @@
-  * support units for 'maxscansize' config option
+version 1.0.6
+
+  * fix file descriptor leak
+  * fix segfault in Xaction destructor
+  * added support for commtouch csamd
+  * support units for 'maxscansize' config option (KB, MB) 
   * remove Content-*Encoding headers before sending an error page,
     this fixes the firefox Content-Encoding issue
   * renamed option 'clamdsocket' to 'avdsocket'
   * added abbility to scan files via INSTREAM command
-  * lots of small improvements
   * fix building with older versions of libmagic
+  * lots of small improvements
 
 version 1.0.5
 
