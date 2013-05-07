@@ -106,6 +106,7 @@ private:
     void processContent(void);
     bool mustScan(libecap::Area area);
     void noteContentAvailable(void);
+    void cleanup(void);
 
     ScanEngine engine;
     size_type received;

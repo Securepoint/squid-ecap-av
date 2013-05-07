@@ -75,6 +75,25 @@ libecap::Area Adapter::Xaction::ErrorPage(void)
     return libecap::Area::FromTempString(errmsg);
 }
 
+void Adapter::Xaction::cleanup(void)
+{
+    if (Ctx) {
+        if (Ctx->status == stInfected)
+            Logger(ilCritical|flXaction) << "INFECTED, " << statusString;
+        else if (statusString != "OK")
+            Logger(ilCritical|flXaction) << statusString;
+
+        if (-1 != Ctx->sockfd)
+            close(Ctx->sockfd);
+
+        if (-1 != Ctx->tempfd)
+            close(Ctx->tempfd);
+
+        free(Ctx);
+        Ctx = NULL;
+    }
+}
+
 /**
  * Determines if we should scan or not.
  */
@@ -450,21 +469,7 @@ Adapter::Xaction::~Xaction()
 {
     FUNCENTER();
 
-    if (Ctx) {
-	if (Ctx->status == stInfected)
-	    Logger(ilCritical|flXaction) << "INFECTED, " << statusString;
-	else if (statusString != "OK")
-	    Logger(ilCritical|flXaction) << statusString;
-
-        if (-1 != Ctx->sockfd)
-            close(Ctx->sockfd);
-
-        if (-1 != Ctx->tempfd)
-            close(Ctx->tempfd);
-
-        free(Ctx);
-    }
-
+    cleanup();
     if (libecap::host::Xaction * x = hostx) {
         hostx = 0;
         x->adaptationAborted();
@@ -504,6 +509,7 @@ void Adapter::Xaction::stop()
 {
     FUNCENTER();
     hostx = 0;
+    cleanup();
     // the caller will delete
 }
 
@@ -538,18 +544,6 @@ void Adapter::Xaction::abMakeMore()
 void Adapter::Xaction::abStopMaking()
 {
     FUNCENTER();
-    if (-1 != Ctx->sockfd) {
-      if (0 == close(Ctx->sockfd))
-	Ctx->sockfd = -1;
-      else
-	Logger(ilCritical|flXaction) << "Error closing socket";
-    }
-    if (-1 != Ctx->tempfd) {
-      if (0 == close(Ctx->tempfd))
-	Ctx->tempfd = -1;
-      else
-	Logger(ilCritical|flXaction) << "Error closing tempfile";
-    }
 
     sendingAb = opComplete;
     stopVb();
