@@ -660,6 +660,8 @@ void Adapter::Xaction::noteVbContentDone(UNUSED bool atEnd)
     Must(Ctx);
     Must(receivingVb == opOn);
 
+    hostx->vbStopMaking(); // we will not call vbContent() any more
+
     if (bypass) {
 	receivingVb = opComplete;
     } else {
