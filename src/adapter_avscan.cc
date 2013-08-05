@@ -662,7 +662,12 @@ void Adapter::Xaction::noteVbContentDone(UNUSED bool atEnd)
 
     hostx->vbStopMaking(); // we will not call vbContent() any more
 
-    if (bypass) {
+    if (0 == received) {
+	/* nothing received => nothing todo */
+	hostx->useVirgin();
+	receivingVb = opNever;
+	return;
+    } else if (bypass) {
 	receivingVb = opComplete;
     } else {
 	receivingVb = opScanning;

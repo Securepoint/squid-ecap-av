@@ -1,5 +1,6 @@
 version 1.0.6
 
+  * fix ICAP error with zero sized bodies + chunked transfer encoding
   * fix file descriptor leak
   * fix segfault in Xaction destructor
   * added support for commtouch csamd
