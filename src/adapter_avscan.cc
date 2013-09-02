@@ -139,7 +139,7 @@ int Adapter::Xaction::avWriteCommand(const char *command)
     Must(command);
     n = strlen(command) + 1;
 
-    tv.tv_sec = TIMEOUT;
+    tv.tv_sec = service->writetimeout;
     tv.tv_usec = 0;
 
     FD_ZERO(&wfds);
@@ -170,7 +170,7 @@ int Adapter::Xaction::avReadResponse(void)
 
     FUNCENTER();
 
-    tv.tv_sec = TIMEOUT;
+    tv.tv_sec = service->readtimeout;
     tv.tv_usec = 0;
 
     FD_ZERO(&rfds);

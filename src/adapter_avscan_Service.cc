@@ -197,6 +197,12 @@ void Adapter::Service::readconfig(std::string aPath)
                 tempdir = val;
             } else if (key == "skiplist") {
                 skiplist = val;
+            } else if (key == "readtimeout") {
+                if (0 >= (readtimeout = atoi(val.c_str())))
+		    readtimeout = TIMEOUT * 2;
+            } else if (key == "writetimeout") {
+                if (0 >= (writetimeout = atoi(val.c_str())))
+		    writetimeout = TIMEOUT;
 	    }
         }
         in.close();
@@ -238,6 +244,8 @@ void Adapter::Service::start()
     maxscansize = 0;
     trickletime = 30;
     tricklesize = 10;
+    readtimeout = TIMEOUT * 2;
+    writetimeout= TIMEOUT;
 
     readconfig(configfn);
 

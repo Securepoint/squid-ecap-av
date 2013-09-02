@@ -81,6 +81,8 @@ public:
     std::string skiplist;    // skiplist file
     std::string tempdir;     // directory to store temp files in
     time_t trickletime;      // the time to wait before trickling
+    time_t readtimeout;      // AV daemon socket read timeout
+    time_t writetimeout;     // AV daemon socket write timeout
     size_type tricklesize;   // number of bytes to send
     size_type maxscansize;   // skip scanning bodies greater than maxscansize
     magic_t mcookie;         // magic cookie
