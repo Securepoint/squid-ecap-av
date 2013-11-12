@@ -1,10 +1,11 @@
 version 1.0.6
 
+  + added read/write timeout options
   * fix ICAP error with zero sized bodies + chunked transfer encoding
   * fix file descriptor leak
   * fix segfault in Xaction destructor
   * added support for commtouch csamd
-  * support units for 'maxscansize' config option (KB, MB) 
+  * support units for 'maxscansize' config option (KB, MB)
   * remove Content-*Encoding headers before sending an error page,
     this fixes the firefox Content-Encoding issue
   * renamed option 'clamdsocket' to 'avdsocket'
@@ -37,9 +38,9 @@ version 1.0.2
   * removed some debugging noise
 
 version 1.0.1
- 
+
   * properly initialize the file descriptors with -1 to not mistakenly close fd 0
 
 version 1.0.0
-  
+
   * initial release
