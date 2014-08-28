@@ -197,6 +197,8 @@ void Adapter::Service::readconfig(std::string aPath)
                 tempdir = val;
             } else if (key == "skiplist") {
                 skiplist = val;
+            } else if (key == "blocklist") {
+                blocklist = val;
             } else if (key == "readtimeout") {
                 if (0 >= (readtimeout = atoi(val.c_str())))
 		    readtimeout = TIMEOUT * 2;
@@ -240,6 +242,7 @@ void Adapter::Service::start()
     avdsocket = "/tmp/clamd.sock";
     magicdb     = "/usr/share/misc/magic.mgc";
     skiplist    = "/etc/squid/ecap_adapter_av.skip";
+    blocklist   = "/etc/squid/ecap_adapter_av.block";
     tempdir     = "/var/tmp";
     maxscansize = 0;
     trickletime = 30;
@@ -266,6 +269,7 @@ void Adapter::Service::start()
         mcookie = NULL;
     }
     skipList = new Adapter::SkipList(skiplist);
+    blockList = new Adapter::SkipList(blocklist);
     Logger(flApplication) << ADAPTERNAME << " started";
 }
 
@@ -277,6 +281,8 @@ void Adapter::Service::stop()
         magic_close(mcookie);
     if (skipList)
         delete(skipList);
+    if (blockList)
+        delete(blockList);
 
     libecap::adapter::Service::stop();
 }

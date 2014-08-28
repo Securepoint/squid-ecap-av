@@ -76,8 +76,10 @@ public:
 
     // Config
     SkipList *skipList;      // list of mimetypes to exclude from scanning
+    SkipList *blockList;     // list of mimetypes to mark as bad
     std::string avdsocket;   // path to the AV daemon socket
     std::string magicdb;     // magic database location
+    std::string blocklist;   // blocklist file
     std::string skiplist;    // skiplist file
     std::string tempdir;     // directory to store temp files in
     time_t trickletime;      // the time to wait before trickling

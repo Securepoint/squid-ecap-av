@@ -72,7 +72,7 @@ private:
 
     typedef enum { opUndecided, opWaiting, opOn, opScanning, opComplete, opNever } OperationState;
     typedef enum { opBuffered, opTrickle, opViralator } OperationMode;
-    typedef enum { stOK, stError, stInfected } ScanState;
+    typedef enum { stOK, stError, stInfected, stBlocked } ScanState;
 
     OperationState receivingVb;
     OperationState sendingAb;
@@ -104,7 +104,7 @@ private:
     int  avWriteCommand(const char *command);
     int  avWriteChunk(char *buf, ssize_t len);
     void processContent(void);
-    bool mustScan(libecap::Area area);
+    void checkFileType(libecap::Area area);
     void noteContentAvailable(void);
     void cleanup(void);
 
@@ -114,6 +114,7 @@ private:
     size_type contentlength;
     time_t startTime;
     time_t lastContent;
+    bool mustscan;
     bool trickled;
     bool senderror;
     bool bypass;

@@ -66,6 +66,8 @@ libecap::Area Adapter::Xaction::ErrorPage(void)
     if (Ctx->status == stInfected) {
         errmsg += "<h1>Access denied!</h1>";
         errmsg += "You've tried to upload/download a file that contains the virus ";
+    } else if (Ctx->status == stBlocked) {
+        errmsg += "<h1>Access denied!</h1>";
     } else {
         errmsg += "<h1>Internal error!</h1>";
         errmsg += "While scanning your request for virus infection an internal error occured!";
@@ -80,6 +82,8 @@ void Adapter::Xaction::cleanup(void)
     if (Ctx) {
         if (Ctx->status == stInfected)
             Logger(ilCritical|flXaction) << "INFECTED, " << statusString;
+        else if (Ctx->status == stBlocked)
+            Logger(ilCritical|flXaction) << "BLOCKED, " << statusString;
         else if (statusString != "OK")
             Logger(ilCritical|flXaction) << statusString;
 
@@ -97,20 +101,27 @@ void Adapter::Xaction::cleanup(void)
 /**
  * Determines if we should scan or not.
  */
-bool Adapter::Xaction::mustScan(libecap::Area area)
+void Adapter::Xaction::checkFileType(libecap::Area area)
 {
     FUNCENTER();
-    if (bypass)
-        return false;
+    mustscan = true;
 
     if (area.size && service->skipList->ready()) {
         const char *mimetype = magic_buffer(service->mcookie, area.start, area.size);
         if (mimetype) {
             if (service->skipList->match(mimetype))
-                return false;
+                mustscan = false;
+
+	    if (service->blockList->match(mimetype)) {
+		statusString = "bad mime type detected: ";
+		statusString += mimetype;
+		Ctx->status = stBlocked;
+                mustscan = false;
+	    }
         }
     }
-    return true;
+    if (bypass)
+	mustscan = false;
 }
 
 void Adapter::Xaction::openTempfile(void)
@@ -638,7 +649,7 @@ void Adapter::Xaction::noteContentAvailable()
             adapted->header().add(name, value);
 
             if (statusLine)
-                statusLine->statusCode(Ctx->status == stInfected ? 403 : 500);
+                statusLine->statusCode(Ctx->status == stError ? 500 : 403);
 
             senderror = true;
         }
@@ -734,7 +745,13 @@ void Adapter::Xaction::noteVbContentAvailable()
             }
         }
 
-        if (mustScan(vb)) {
+	checkFileType(vb);
+
+        if (Ctx->status != stOK) {
+            sendingAb = opWaiting;
+	    noteContentAvailable();
+	    return;
+	} else if (mustscan) {
             openTempfile();
             // go to state waiting, hostx->useAdapted() will be called later
             // via noteContentAvailable()
