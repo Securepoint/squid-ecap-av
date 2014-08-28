@@ -8,7 +8,7 @@ Securepoint eCAP antivirus adapter is an loadable eCAP adapter for the
 popular Squid HTTP-Proxy which allows you to scan all traffic going through
 for known viruses. Currently the only supported virus scan engines are
 clamav and commtouch csamd. The very latest version can be downloaded @
-https://sourceforge.net/projects/squid-ecap-av/files/latest/download[sourceforge.net].
+https://github.com/Securepoint/squid-ecap-av/releases[Github].
 
 Development of this adapter started in March 2011 because nothing comparable
 could be found at this time. In the meantime (2011-03-17) at least one similar
@@ -35,13 +35,13 @@ Download and install libecap
 
 .Download and unpack:
 ------------------------------------------------------------------------------
-wget http://www.measurement-factory.com/tmp/ecap/libecap-0.0.3.tar.gz
-tar xf libecap-0.0.3.tar.gz
+wget http://www.measurement-factory.com/tmp/ecap/libecap-0.2.0.tar.gz
+tar xf libecap-0.2.0.tar.gz
 ------------------------------------------------------------------------------
 
 .Build and install:
 ------------------------------------------------------------------------------
-cd libecap-0.0.3/
+cd libecap-0.2.0/
 ./configure
 make
 make install
@@ -62,20 +62,19 @@ yum install file-devel
 
 .Download and unpack:
 
-Project homepage is http://sourceforge.net/projects/squid-ecap-av/. If you like
+Project homepage is https://github.com/Securepoint/squid-ecap-av/. If you like
 living on the bleeding edge, you can pull the working branch directly from 
-http://squid-ecap-av.git.sourceforge.net/git/gitweb.cgi?p=squid-ecap-av[
-git://squid-ecap-av.git.sourceforge.net/gitroot/squid-ecap-av/squid-ecap-av].
+git@github.com:Securepoint/squid-ecap-av.git[git@github.com:Securepoint/squid-ecap-av.git].
 
 ------------------------------------------------------------------------------
-wget http://downloads.sourceforge.net/project/squid-ecap-av/1.x.x/squid-ecap-av-1.0.6.tar.bz2
-tar xf squid-ecap-av-1.0.6.tar.bz2
+wget https://github.com/Securepoint/squid-ecap-av/archive/squid-ecap-av-v1.0.7.tar.gz
+tar xf squid-ecap-av-v1.0.7.tar.gz
 ------------------------------------------------------------------------------
 
 .Build and install:
 ------------------------------------------------------------------------------
-mkdir squid-ecap-av-1.0.6/build
-cd squid-ecap-av-1.0.6/build
+mkdir squid-ecap-av-1.0.7/build
+cd squid-ecap-av-1.0.7/build
 cmake -DCMAKE_INSTALL_PREFIX=/usr ..
 make
 make install
@@ -120,6 +119,7 @@ Currently the following options are supported:
 * +maxscansize+ (bytes): skip scanning of bodies larger than +maxscansize+, set to 0 to always scan the whole body (+0+)
 * +magicdb+: path to the magic database file (+/usr/share/misc/magic.mgc+)
 * +skiplist+: path to the file containing the list of mimetypes not to scan (+/etc/squid/ecap_adapter_av.skip+)
+* +blocklist+: path to the file containing the list of mimetypes to block (+/etc/squid/ecap_adapter_av.block+)
 * +tempdir+: directory to store temporary files in
 * +readtimeout+: timeout for AV socket read operations
 * +writetimeout+: timeout for AV socket write operations
@@ -133,8 +133,8 @@ Anti-Malware test file from http://www.eicar.org/download/eicar.com[here].
 Bug reporting
 -------------
 
-Report bugs through the SourceForge.net
-http://sourceforge.net/projects/squid-ecap-av[squid-ecap-av] project page.
+Report bugs through the Github
+https://github.com/Securepoint/squid-ecap-av/issues[squid-ecap-av] project page.
 
 A note for Firefox Users
 ------------------------

@@ -1,3 +1,7 @@
+version 1.0.7
+
+  + added blocklist support
+
 version 1.0.6
 
   + added read/write timeout options
