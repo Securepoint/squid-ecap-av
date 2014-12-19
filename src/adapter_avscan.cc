@@ -456,7 +456,7 @@ void Adapter::Xaction::avCheckVersion(void)
 	    engine = engineClamav;
 	    // commtouch csamd doesn't return a name
 	} else if (6 == sscanf(Ctx->avbuf, "[%d.%d|%[.0-9]|%[.0-9]|%[0-9]|%[0-9]]", &major, &minor, s, s, s, s)) {
-	    engine = minor >= 13 ? engineClamav : engineCommtouch;
+	    engine = (major > 1 || minor >= 13) ? engineClamav : engineCommtouch;
 	} else {
 	    Ctx->status = stError;
 	}
