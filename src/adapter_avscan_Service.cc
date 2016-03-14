@@ -300,6 +300,18 @@ bool Adapter::Service::wantsUrl(UNUSED const char *url) const
     return true;                  // no-op is applied to all messages
 }
 
+#ifdef V100
+Adapter::Service::MadeXactionPointer
+Adapter::Service::makeXaction(libecap::host::Xaction * hostx)
+{
+    FUNCENTER();
+    return Service::MadeXactionPointer(new Adapter::Xaction(std::tr1::static_pointer_cast<Service>(self), hostx));
+}
+
+// create the adapter and register with libecap to reach the host application
+static bool Registered =
+    libecap::RegisterVersionedService(new Adapter::Service());
+#else
 libecap::adapter::Xaction *
 Adapter::Service::makeXaction(libecap::host::Xaction * hostx)
 {
@@ -310,3 +322,4 @@ Adapter::Service::makeXaction(libecap::host::Xaction * hostx)
 // create the adapter and register with libecap to reach the host application
 static const bool Registered =
     (libecap::RegisterService(new Adapter::Service), true);
+#endif

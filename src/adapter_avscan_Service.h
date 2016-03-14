@@ -72,7 +72,11 @@ public:
     virtual bool wantsUrl(const char *url) const;
 
     // Work
+#ifdef V100
+    Service::MadeXactionPointer makeXaction(libecap::host::Xaction * hostx);
+#else
     virtual libecap::adapter::Xaction * makeXaction(libecap::host::Xaction * hostx);
+#endif
 
     // Config
     SkipList *skipList;      // list of mimetypes to exclude from scanning
