@@ -601,9 +601,12 @@ libecap::Area Adapter::Xaction::abContent(UNUSED size_type offset, UNUSED size_t
         return libecap::Area::FromTempString("");
     }
 
-    lseek(Ctx->tempfd, processed, SEEK_SET);
-
-    if ((size_type)-1 == (sz = (size_type)read(Ctx->tempfd, Ctx->buf,  sz))) {
+    if (-1 == lseek(Ctx->tempfd, processed, SEEK_SET)) {
+        statusString = "can't seek temp file: ";
+        statusString += strerror(errno);
+        Ctx->status = stError;
+        return libecap::Area::FromTempString("");
+    } else if ((size_type)-1 == (sz = (size_type)read(Ctx->tempfd, Ctx->buf,  sz))) {
         statusString = "can't read from temp file: ";
 	statusString += strerror(errno);
 	Ctx->status = stError;
