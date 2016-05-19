@@ -473,9 +473,11 @@ Adapter::Xaction::Xaction(libecap::shared_ptr < Service > aService, libecap::hos
     sendingAb(opUndecided)
 {
     engine = engineAuto;
-    received = processed = 0;
-    trickled = senderror = bypass = false;
+    received = processed = contentlength = 0;
+    trickled = senderror = bypass = mustscan = false;
     statusString = "OK";
+    Ctx = 0;
+    startTime = lastContent = 0;
 }
 
 Adapter::Xaction::~Xaction()
