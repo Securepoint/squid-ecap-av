@@ -351,7 +351,7 @@ static int doconnect(std::string aPath)
         struct sockaddr_un address;
         memset(&address, 0, sizeof(address));
         address.sun_family = AF_LOCAL;
-        strncpy(address.sun_path, aPath.c_str(), sizeof(address.sun_path));
+        strncpy(address.sun_path, aPath.c_str(), sizeof(address.sun_path) - 1);
         if (connect(sockfd, (struct sockaddr *) &address, sizeof(address)) == -1) {
             close(sockfd);
             sockfd = -1;
