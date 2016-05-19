@@ -345,7 +345,7 @@ int Adapter::Xaction::avScanResultClamav(void)
 // exceeds sizeof(address.sun_path) connect() returns ENOENT.
 static int doconnect(std::string aPath)
 {
-    int sockfd = -1;
+    int flags, sockfd = -1;
 
     if (-1 != (sockfd = socket(AF_LOCAL, SOCK_STREAM, 0))) {
         struct sockaddr_un address;
@@ -356,7 +356,9 @@ static int doconnect(std::string aPath)
             close(sockfd);
             sockfd = -1;
         }
-        fcntl(sockfd, F_SETFL, fcntl(sockfd, F_GETFL) | O_NONBLOCK);
+        if (-1 != (flags = fcntl(sockfd, F_GETFL))) {
+            fcntl(sockfd, F_SETFL, flags | O_NONBLOCK);
+        }
     }
     return sockfd;
 }
