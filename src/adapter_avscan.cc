@@ -143,7 +143,7 @@ int Adapter::Xaction::avWriteCommand(const char *command)
 {
     fd_set wfds;
     struct timeval tv;
-    int n;
+    int n, r;
 
     FUNCENTER();
 
@@ -156,9 +156,9 @@ int Adapter::Xaction::avWriteCommand(const char *command)
     FD_ZERO(&wfds);
     FD_SET(Ctx->sockfd, &wfds);
 
-    if (n == write(Ctx->sockfd, command, n)) {
+    if (n == (r = write(Ctx->sockfd, command, n))) {
         return n;
-    } else if (n == -1 && errno != EAGAIN) {
+    } else if (r == -1 && errno != EAGAIN) {
         statusString = "can't write to AV-daemon socket: ";
         statusString += strerror(errno);
     } else if (-1 == select(Ctx->sockfd + 1, NULL, &wfds, NULL, &tv)) {
