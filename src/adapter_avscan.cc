@@ -585,13 +585,7 @@ libecap::Area Adapter::Xaction::abContent(UNUSED size_type offset, UNUSED size_t
     if (receivingVb == opComplete || bypass) {
         sz = sizeof(Ctx->buf); // use the whole buffer
         trickled = false;
-
-        // finished sending?
-        if (processed >= received && receivingVb == opComplete) {
-            sendingAb = opComplete;
-            hostx->noteAbContentDone(true);
-        }
-    } else {
+	} else {
         sz = service->tricklesize;
     }
 
@@ -622,6 +616,13 @@ void Adapter::Xaction::abContentShift(size_type size)
 {
     Must(sendingAb == opOn);
     processed += size;
+    if (processed >= received && receivingVb == opComplete) {
+        sendingAb = opComplete;
+
+        // order matters -- abContent is called one last time by squid and should
+        // then return an empty buffer
+        hostx->noteAbContentDone(true);
+    }
 }
 
 void Adapter::Xaction::noteContentAvailable()
@@ -729,6 +730,7 @@ void Adapter::Xaction::noteVbContentAvailable()
     if (Ctx->status == stError) {
         // Tell client not to expect to get more data
 	sendingAb = opComplete;
+	Logger(ilCritical) << "finished err";
 	hostx->noteAbContentDone(true);
 	return;
     }
