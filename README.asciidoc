@@ -20,7 +20,6 @@ Features
 * content type detection via libmagic
 * configurable skiplist dependent of the detected content type
 * data trickling
-* patience pages (not yet)
 
 ==============================================================================
 eCAP support was introduced with SQUID version *3.1.*. You cannot use the
@@ -35,13 +34,13 @@ Download and install libecap
 
 .Download and unpack:
 ------------------------------------------------------------------------------
-wget http://www.measurement-factory.com/tmp/ecap/libecap-0.2.0.tar.gz
-tar xf libecap-0.2.0.tar.gz
+wget http://www.measurement-factory.com/tmp/ecap/libecap-1.0.0.tar.gz
+tar xf libecap-1.0.0.tar.gz
 ------------------------------------------------------------------------------
 
 .Build and install:
 ------------------------------------------------------------------------------
-cd libecap-0.2.0/
+cd libecap-1.0.0/
 ./configure
 make
 make install
@@ -67,14 +66,14 @@ living on the bleeding edge, you can pull the working branch directly from
 git@github.com:Securepoint/squid-ecap-av.git[git@github.com:Securepoint/squid-ecap-av.git].
 
 ------------------------------------------------------------------------------
-wget https://github.com/Securepoint/squid-ecap-av/archive/squid-ecap-av-v1.0.7.tar.gz
-tar xf squid-ecap-av-v1.0.7.tar.gz
+wget https://github.com/Securepoint/squid-ecap-av/archive/squid-ecap-av-v1.0.9.tar.gz
+tar xf squid-ecap-av-v1.0.9.tar.gz
 ------------------------------------------------------------------------------
 
 .Build and install:
 ------------------------------------------------------------------------------
-mkdir squid-ecap-av-1.0.7/build
-cd squid-ecap-av-1.0.7/build
+mkdir squid-ecap-av-1.0.9/build
+cd squid-ecap-av-1.0.9/build
 cmake -DCMAKE_INSTALL_PREFIX=/usr ..
 make
 make install
