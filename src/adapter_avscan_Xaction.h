@@ -22,12 +22,106 @@
 #ifndef _ADAPTER_AVSCAN_XACTION_H
 #define _ADAPTER_AVSCAN_XACTION_H 1
 
+#include <stdint.h>
+
 namespace Adapter
 {                               // not required, but adds clarity
 
 using libecap::size_type;
 using libecap::StatusLine;
 
+/**
+ * Class to wrap the buffering part of the ecap transaction.
+ *
+ * Writes incoming data into a file or a buffer, depending on
+ * the createFile Parameter of the makeBuffer method and whether
+ * or not discardFile() is called at some point.
+ *
+ * storeContent and shiftContent move a virtual index pointer,
+ * getContent can be used to retrieve data from that index pointer.
+ */
+class AbBuffer {
+public:
+    ~AbBuffer();
+
+    /** Signal that no file containing the complete data is
+     *  needed any longer. */
+    void discardFile();
+
+    /** Get next len bytes from buffer .
+     * @param[in] len number of bytes to retrieve
+     * @return Area containing at most len bytes (may be less)
+     */
+    libecap::Area getContent(size_type len);
+
+    /** Signal that next len bytes have been processed and are
+     * no longer needed.
+     *
+     * Moves the read pointer by len. len must not be larger than
+     * the number of bytes available in the buffer.
+     *
+     * @param[in] len number of bytes that can be discarded
+     */
+    void shiftContent(size_type len);
+
+    /** Store next len bytes to some buffer. Moves the write
+     * index forward by the number of bytes returned
+     *
+     * @param data Area to store
+     * @return number of bytes actually stored (may be less than data.size)
+     */
+    size_type storeContent(const libecap::Area& data);
+
+    /** Total number of bytes buffered.
+     */
+    uint64_t numReceived();
+
+    /** Total number of bytes returned.
+     */
+    uint64_t numReturned();
+
+    /** Checks if there is currently data in the buffer.
+     * @return true buffer is empty
+     *         false buffer has some data available */
+    bool isEmpty();
+
+    /** Return file descriptor that can be used to access the written
+     * buffer data. Only valid if buffer is NOT in bypass mode
+     *
+     * @return readonly file descriptor to written data
+     */
+    int getReadonlyFd();
+
+    static std::tr1::shared_ptr<AbBuffer> makeBuffer(bool createFile, libecap::shared_ptr<const Service> service, std::string& statusString);
+
+private:
+    static const size_type BUFSIZE = 8192;
+    static const size_type MASK = BUFSIZE - 1;
+
+    libecap::Area getContentFromFile(size_type len);
+    libecap::Area getContentFromBuffer(size_type len);
+    size_type numReadable();
+
+    AbBuffer(bool bypass,
+             libecap::shared_ptr<const Service> service,
+             std::string& statusString);
+
+    std::string& statusString;
+    bool bypass;
+    size_type fileOffset; //< offset of read pos relative to current pos
+    int writefd; //< internally used read/write file descriptor
+    int rofd; //< file descriptor to data that may be used externally
+    int rofd_int; //< readonly file descriptor for internal use
+    char buf[BUFSIZE];
+    size_type readpos;
+    size_type writepos;
+    uint64_t received;
+    uint64_t returned;
+};
+
+/*
+ * Implementation of the Adapter interface of libecap::Xaction.
+ */
 class Xaction:public libecap::adapter::Xaction
 {
 public:
@@ -79,15 +173,11 @@ private:
     struct Ctx
     {
         int sockfd;
-        int tempfd;
         int status;
-        char *tempfn;
-        char buf[BUFSIZ];
         char avbuf[BUFSIZ];
     } *Ctx;
 
     std::string statusString;
-    void openTempfile(void);
 
     libecap::Area ErrorPage(void);
     void avStart(void);
@@ -105,17 +195,18 @@ private:
     void checkFileType(libecap::Area area);
     void noteContentAvailable(void);
     void cleanup(void);
+    void vbFinished();
+    void vbGetChunk();
 
     ScanEngine engine;
-    size_type received;
-    size_type processed;
-    size_type contentlength;
     time_t startTime;
     time_t lastContent;
     bool mustscan;
     bool trickled;
     bool senderror;
     bool bypass;
+    bool hostDone;
+    libecap::shared_ptr<AbBuffer> tmpbuf;
 };
 } // namespace Adapter
 
