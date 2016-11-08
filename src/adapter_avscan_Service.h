@@ -39,7 +39,6 @@ public:
 private:
     void add(std::string s);
     struct skipListEntry {
-        std::string expr;
         regex_t *preg;
         struct skipListEntry *next;
     } *entries;

@@ -69,6 +69,17 @@ Adapter::SkipList::SkipList(std::string aPath)
 
 Adapter::SkipList::~SkipList()
 {
+    if (NULL == entries) {
+	/* nothing to free */
+    } else {
+	struct skipListEntry *entry = entries;
+	while (entry) {
+	    struct skipListEntry *next = entry->next;
+	    regfree(entry->preg);
+	    delete(entry);
+	    entry = next;
+	}
+    }
 }
 
 void Adapter::SkipList::add(std::string s)
@@ -87,7 +98,6 @@ void Adapter::SkipList::add(std::string s)
     } else if (!(entry = new (struct skipListEntry))) {
         /* oom */
     } else {
-        entry->expr = s;
         entry->preg = regex;
         entry->next = entries;
         entries = entry;
