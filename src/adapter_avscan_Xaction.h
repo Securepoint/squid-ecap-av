@@ -111,7 +111,7 @@ private:
     size_type fileOffset; //< offset of read pos relative to current pos
     int writefd; //< internally used read/write file descriptor
     int rofd; //< file descriptor to data that may be used externally
-    int rofd_int; //< readonly file descriptor for internal use
+    int rofd_internal; //< readonly file descriptor for internal use
     char buf[BUFSIZE];
     size_type readpos;
     size_type writepos;
@@ -195,6 +195,7 @@ private:
     void checkFileType(libecap::Area area);
     void noteContentAvailable(void);
     void cleanup(void);
+    bool abCheckFinished();
     void vbFinished();
     void vbGetChunk();
 

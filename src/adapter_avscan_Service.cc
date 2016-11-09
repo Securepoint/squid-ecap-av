@@ -262,7 +262,7 @@ void Adapter::Service::start()
 
     readconfig(configfn);
 
-    DEBUG("using avdsocket=%s", avdsocket.c_str());
+    LOG_DBG("using avdsocket=%s", avdsocket.c_str());
 /* Some old versions of libmagic don't support MAGIC_MIME_TYPE.
  * But hey, if we have squid-3.1 we should probably also have an
  * actual version of libmagic. Anyhow, use MAGIC_MIME instead.

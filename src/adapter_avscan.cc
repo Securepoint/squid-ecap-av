@@ -30,6 +30,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <sys/types.h>
+#include <sys/stat.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/uio.h>
@@ -62,8 +63,8 @@ using namespace std;
 
 int Adapter::AbBuffer::getReadonlyFd() {
     Must(!bypass);
-    Must(rofd_int != -1);
-    if (bypass || rofd_int == -1) {
+    Must(rofd_internal != -1);
+    if (bypass || rofd_internal == -1) {
         return -1;
     } else {
         return rofd;
@@ -79,16 +80,19 @@ libecap::Area Adapter::AbBuffer::getContentFromFile(size_type len)
 {
     char buf[len];
     size_type nRead;
-    DEBUG("Getting from file fileOffset=%u", fileOffset);
-    if (-1 == lseek(rofd_int, -((off_t)fileOffset), SEEK_CUR)) {
+
+    LOG_DBG("Getting from file fileOffset=%u", fileOffset);
+    Must(rofd_internal != -1);
+
+    if (-1 == lseek(rofd_internal, -((off_t)fileOffset), SEEK_CUR)) {
         statusString = "can't seek temp file: ";
         statusString += strerror(errno);
-        DEBUG("Error seek");
+        LOG_DBG("Error seek");
         return libecap::Area::FromTempString("");
-    } else if ((size_type)-1 == (nRead = (size_type)read(rofd_int, buf, len))) {
+    } else if ((size_type)-1 == (nRead = (size_type)read(rofd_internal, buf, len))) {
         statusString = "can't read from temp file: ";
         statusString += strerror(errno);
-        DEBUG("Error read");
+        LOG_DBG("Error read");
         return libecap::Area::FromTempString("");
     }
 
@@ -97,13 +101,15 @@ libecap::Area Adapter::AbBuffer::getContentFromFile(size_type len)
     if (bypass && fileOffset == 0) {
         // means we read all content from file and need it no longer;
         // close it and use memory buffer from now on
-        DEBUG("closing tempfd, bypass continuing with memory buffer");
-        close(rofd_int);
-        rofd_int = -1;
+        LOG_DBG("closing tempfd, bypass continuing with memory buffer");
+        close(rofd_internal);
+        rofd_internal = -1;
+        close(writefd);
+        writefd = -1;
         return libecap::Area::FromTempString("");
     }
 
-    DEBUG("Read returned successful: %u", nRead);
+    LOG_DBG("Read returned successful: %u", nRead);
     return libecap::Area::FromTempBuffer(buf, nRead);
 }
 
@@ -119,12 +125,12 @@ libecap::Area Adapter::AbBuffer::getContentFromBuffer(size_type len)
 
     size_type size;
     if (writepos == readpos) {
-        DEBUG("getContent: writepos=%u readpos=%u return=%u", writepos, readpos, 0);
+        LOG_DBG("getContent: writepos=%u readpos=%u return=%u", writepos, readpos, 0);
         return libecap::Area::FromTempString("");
     } else {
         size = numReadable();
         size = size >= len ? len : size;
-        DEBUG("getContent: writepos=%u readpos=%u size=%u", writepos, readpos, size);
+        LOG_DBG("getContent: writepos=%u readpos=%u size=%u", writepos, readpos, size);
 
         return libecap::Area::FromTempBuffer(&(buf[readpos]), size);
     }
@@ -132,7 +138,7 @@ libecap::Area Adapter::AbBuffer::getContentFromBuffer(size_type len)
 
 libecap::Area Adapter::AbBuffer::getContent(size_type len)
 {
-    if (bypass && rofd_int == -1) {
+    if (bypass && rofd_internal == -1) {
         return getContentFromBuffer(len);
     } else {
         return getContentFromFile(len);
@@ -141,16 +147,16 @@ libecap::Area Adapter::AbBuffer::getContent(size_type len)
 
 void Adapter::AbBuffer::shiftContent(size_type len)
 {
-    DEBUG("shiftContent: len=%u", len);
+    LOG_DBG("shiftContent: len=%u", len);
     returned += len;
-    if (bypass && rofd_int == -1) {
+    if (bypass && rofd_internal == -1) {
         readpos = (readpos + len) & MASK;
-        DEBUG("Shift buffer by %u; new pos=%u", len, readpos);
+        LOG_DBG("Shift buffer by %u; new pos=%u", len, readpos);
     } else {
         Must(fileOffset >= len);
-        size_type old = fileOffset;
+        UNUSED size_type old = fileOffset;
         fileOffset -= len;
-        DEBUG("Shift file by %u; fileOffset_old=%u fileOffset_new=%u", len, old, fileOffset);
+        LOG_DBG("Shift file by %u; fileOffset_old=%u fileOffset_new=%u", len, old, fileOffset);
     }
 }
 
@@ -162,10 +168,9 @@ bool Adapter::AbBuffer::isEmpty()
 Adapter::size_type Adapter::AbBuffer::storeContent(const libecap::Area& data)
 {
     size_type nWritten = 0;
-    if (bypass && rofd_int == -1) {
+    if (bypass && rofd_internal == -1) {
         size_type size;
-        size_type start;
-        DEBUG("storeContent: storing to buffer: readpos=%u writepos=%u data.size=%u", readpos, writepos, data.size);
+        LOG_DBG("storeContent: storing to buffer: readpos=%u writepos=%u data.size=%u", readpos, writepos, data.size);
 
         // improvable, may lead to writes of a single byte
         // readpos must not equal writepos because this signifies an empty buffer
@@ -176,33 +181,36 @@ Adapter::size_type Adapter::AbBuffer::storeContent(const libecap::Area& data)
                 : readpos == 0
                     ? BUFSIZE - 1 - writepos
                     : BUFSIZE - writepos;
-        DEBUG("storing to buffer: size=%u", size);
+        LOG_DBG("storing to buffer: size=%u", size);
         size = size >= data.size ? data.size : size;
-        DEBUG("storing to buffer: size=%u", size);
-
+        LOG_DBG("storing to buffer: size=%u", size);
+        std::copy(data.start, data.start + size, &(buf[writepos]));
         writepos = (writepos + size) & MASK;
-        std::copy(data.start, data.start + size, &(buf[start]));
         nWritten = size;
-        DEBUG("storeContent: writepos=%u nWritten=%u", writepos, nWritten);
+        LOG_DBG("storeContent: writepos=%u nWritten=%u", writepos, nWritten);
     } else {
-        Must(writefd != -1);
-        lseek(writefd, 0, SEEK_END);
-        while (nWritten < data.size) {
-            const char *pos = data.start+nWritten;
-            size_type toWrite = data.size-nWritten;
-            ssize_t n = write(writefd, pos, toWrite);
-            if (n < 0) {
-                DEBUG("Error writing to file: nWritten=%d vb.size=%u pos=%p toWrite=%u", nWritten, data.size, pos, toWrite);
-                statusString = "can't write to temp file: ";
-                statusString += strerror(errno);
-                return -1;
+        if (writefd < 0) {
+            Must(false);
+            return 0;
+        } else {
+            lseek(writefd, 0, SEEK_END);
+            while (nWritten < data.size) {
+                const char *pos = data.start+nWritten;
+                size_type toWrite = data.size-nWritten;
+                ssize_t n = write(writefd, pos, toWrite);
+                if (n < 0) {
+                    LOG_DBG("Error writing to file: nWritten=%d vb.size=%u pos=%p toWrite=%u", nWritten, data.size, pos, toWrite);
+                    statusString = "can't write to temp file: ";
+                    statusString += strerror(errno);
+                    return -1;
+                }
+                nWritten += n;
+                LOG_DBG("storeContent: written to tmpfile: nWritten=%d vb.size=%u pos=%p toWrite=%d", nWritten, data.size, pos, toWrite);
             }
-            nWritten += n;
-            DEBUG("storeContent: written to tmpfile: nWritten=%d vb.size=%u pos=%p toWrite=%d", nWritten, data.size, pos, toWrite);
         }
     }
     received += nWritten;
-    DEBUG("storeContent: received=%llu", received);
+    LOG_DBG("storeContent: received=%llu", received);
     return nWritten;
 }
 
@@ -224,7 +232,7 @@ Adapter::AbBuffer::AbBuffer(bool createFile,
         fileOffset(0),
         writefd(-1),
         rofd(-1),
-        rofd_int(-1),
+        rofd_internal(-1),
         readpos(0),
         writepos(0),
         received(0),
@@ -232,18 +240,21 @@ Adapter::AbBuffer::AbBuffer(bool createFile,
 {
     FUNCENTER();
     char fn[PATH_MAX];
+    mode_t oldmask;
 
-    DEBUG("opening tmp file at %s/squid-ecap-XXXXXX", service->tempdir.c_str());
+    LOG_DBG("opening tmp file at %s/squid-ecap-XXXXXX", service->tempdir.c_str());
     snprintf(fn, PATH_MAX - 1, "%s/squid-ecap-XXXXXX", service->tempdir.c_str());
+    oldmask = umask(0077);
     writefd = mkstemp((char *)fn);
-    DEBUG("opening tmp file at %s", fn);
+    umask(oldmask);
+    LOG_DBG("opening tmp file at %s", fn);
     rofd = open(fn, O_RDONLY);
-    rofd_int = open(fn, O_RDONLY);
-    if (writefd < 0 || rofd < 0 || rofd_int < 0) {
+    rofd_internal = open(fn, O_RDONLY);
+    if (writefd < 0 || rofd < 0 || rofd_internal < 0) {
         statusString = "can't open temp file: ";
         statusString += strerror(errno);
     }
-    Must(writefd > 0 && rofd > 0 && rofd_int > 0);
+    Must(writefd > 0 && rofd > 0 && rofd_internal > 0);
     unlink(fn);
 }
 
@@ -255,8 +266,8 @@ Adapter::AbBuffer::~AbBuffer()
     if (rofd) {
         close(rofd);
     }
-    if (rofd_int) {
-        close(rofd_int);
+    if (rofd_internal) {
+        close(rofd_internal);
     }
 }
 
@@ -286,8 +297,7 @@ libecap::Area Adapter::Xaction::ErrorPage(void)
     return libecap::Area::FromTempString(errmsg);
 }
 
-void Adapter::Xaction::cleanup(void)
-{
+void Adapter::Xaction::cleanup(void) {
     if (Ctx) {
         if (Ctx->status == stInfected)
             Logger(ilCritical|flXaction) << "INFECTED, " << statusString;
@@ -608,26 +618,31 @@ void Adapter::Xaction::avWriteStream(void)
     FUNCENTER();
     char buf[BUFSIZ];
     ssize_t len;
-
     Must(tmpbuf != NULL);
+
+    int fd = tmpbuf->getReadonlyFd();
     // Set offset to the beginning of the file
-    if (-1 == lseek(tmpbuf->getReadonlyFd(), 0, SEEK_SET)) {
-        Ctx->status = stError;
-    } else while (1) {
-        if (-1 == (len = read(tmpbuf->getReadonlyFd(), buf, BUFSIZ))) {
-            statusString = "read from tempfile failed: ";
-            statusString += strerror(errno);
+    if (fd > 0) {
+        if (-1 == lseek(fd, 0, SEEK_SET)) {
             Ctx->status = stError;
-        } else if (-1 == avWriteChunk(buf, len)) {
-            statusString = "write to AV-daemon failed: ";
-            statusString += strerror(errno);
-            Ctx->status = stError;
-        } else if (!len) {
-            /* */
-        } else {
-            continue;
+        } else while (1) {
+            if (-1 == (len = read(fd, buf, BUFSIZ))) {
+                statusString = "read from tempfile failed: ";
+                statusString += strerror(errno);
+                Ctx->status = stError;
+            } else if (-1 == avWriteChunk(buf, len)) {
+                statusString = "write to AV-daemon failed: ";
+                statusString += strerror(errno);
+                Ctx->status = stError;
+            } else if (!len) {
+                /* */
+            } else {
+                continue;
+            }
+            break;
         }
-        break;
+    } else {
+        Ctx->status = stError;
     }
 }
 
@@ -771,8 +786,13 @@ libecap::Area Adapter::Xaction::abContent(UNUSED size_type offset, UNUSED size_t
         stopVb();
         sendingAb = opComplete;
         // Nothing written so far. We can send an error message!
-        if (senderror)
+        if (senderror) {
             return ErrorPage();
+        } else {
+            // reaching this point, we already started trickling and can only
+            // abort the process in case of an error (e.g., virus detected)
+            hostx->adaptationAborted();
+        }
     }
 
     // finished receiving?
@@ -786,12 +806,12 @@ libecap::Area Adapter::Xaction::abContent(UNUSED size_type offset, UNUSED size_t
     // if complete, there is nothing more to return.
     if (sendingAb == opComplete || trickled) {
         trickled = false;
-        DEBUG("abContent: return empty buffer");
+        LOG_DBG("abContent: return empty buffer");
         return libecap::Area::FromTempString("");
     }
 
     Must(tmpbuf != NULL);
-    DEBUG("abContent: try to get %u bytes; processed=%llu", sz, tmpbuf->numReturned());
+    LOG_DBG("abContent: try to get %u bytes; processed=%llu", sz, tmpbuf->numReturned());
     trickled = true;
     lastContent = time(NULL);
 
@@ -801,17 +821,13 @@ libecap::Area Adapter::Xaction::abContent(UNUSED size_type offset, UNUSED size_t
 void Adapter::Xaction::abContentShift(size_type size)
 {
     FUNCENTER();
-    DEBUG("abContentShift: %u", size);
+    LOG_DBG("abContentShift: %u", size);
     Must(sendingAb == opOn);
     Must(tmpbuf != NULL);
     tmpbuf->shiftContent(size);
-    if (tmpbuf->isEmpty() && receivingVb == opComplete) {
-        sendingAb = opComplete;
 
-        // order matters -- abContent is called again by squid and should
-        // then return an empty buffer
-        hostx->noteAbContentDone(true);
-    }
+    // check if we are finished with abContent
+    abCheckFinished();
 }
 
 void Adapter::Xaction::noteContentAvailable()
@@ -860,6 +876,17 @@ void Adapter::Xaction::noteContentAvailable()
     hostx->noteAbContentAvailable();
 }
 
+bool Adapter::Xaction::abCheckFinished()
+{
+    if (tmpbuf->isEmpty() && receivingVb == opComplete) {
+        sendingAb = opComplete;
+        hostx->noteAbContentDone(true);
+        return true;
+    } else {
+        return false;
+    }
+}
+
 void Adapter::Xaction::vbFinished()
 {
     Must(Ctx);
@@ -869,7 +896,7 @@ void Adapter::Xaction::vbFinished()
     hostx->vbStopMaking(); // we will not call vbContent() any more
 
     if (0 == tmpbuf->numReceived()) {
-        /* nothing received => nothing todo */
+        /* nothing received => nothing to be done */
         hostx->useVirgin();
         receivingVb = opNever;
         return;
@@ -879,12 +906,19 @@ void Adapter::Xaction::vbFinished()
         receivingVb = opScanning;
         avStart();
         if (Ctx->status == stOK) {
+
+            // keep trickling data while AV scanner is busy (-2 signifies
+            // timeout condition
             while (-2 == avScanResult())
                 noteContentAvailable();
         }
         receivingVb = opComplete;
     }
-    noteContentAvailable();
+
+    // arriving here
+    if (!abCheckFinished()) {
+        noteContentAvailable();
+    }
 }
 
 // finished reading the virgin body
@@ -938,7 +972,7 @@ void Adapter::Xaction::vbGetChunk()
     // get next chunk of virgin body
     const libecap::Area lastVb = hostx->vbContent(0, libecap::nsize);
 
-    DEBUG("vbContent: start=%p size=%u", lastVb.start, lastVb.size);
+    LOG_DBG("vbContent: start=%p size=%u", lastVb.start, lastVb.size);
     if (sendingAb == opUndecided) {
         uint64_t contentlength;
         // Try to read the ContentLength so we can decide whether scanning has
@@ -958,12 +992,12 @@ void Adapter::Xaction::vbGetChunk()
         checkFileType(lastVb);
 
         if (Ctx->status != stOK) {
-            DEBUG("error case");
+            LOG_DBG("error case");
             sendingAb = opWaiting;
             noteContentAvailable();
             return;
         } else if (mustscan) {
-            DEBUG("mustscan=true");
+            LOG_DBG("mustscan=true");
             try {
                 tmpbuf = AbBuffer::makeBuffer(bypass, service, statusString);
                 // go to state waiting, hostx->useAdapted() will be called later
@@ -974,7 +1008,7 @@ void Adapter::Xaction::vbGetChunk()
                 throw e;
             }
         } else {
-            DEBUG("use virgin");
+            LOG_DBG("use virgin");
             // nothing to do, just send the vb
             hostx->useVirgin();
             abDiscard();
@@ -982,7 +1016,7 @@ void Adapter::Xaction::vbGetChunk()
         }
     }
 
-    DEBUG("store to buffer: start=%p size=%u bypass=%d mustscan=%d", lastVb.start, lastVb.size, bypass, mustscan);
+    LOG_DBG("store to buffer: start=%p size=%u bypass=%d mustscan=%d hostDone=%d", lastVb.start, lastVb.size, bypass, mustscan, hostDone);
 
     Must(tmpbuf != NULL);
     numStored = tmpbuf->storeContent(lastVb);
@@ -994,17 +1028,18 @@ void Adapter::Xaction::vbGetChunk()
         tmpbuf->discardFile();
     }
 
+    LOG_DBG("hostDone=%d; last chunk size=%u last chunk stored=%u", hostDone, lastVb.size, numStored);
     // if host has finished already, check if we read all virgin
-    // body, because there won't be another notification if we did
-    if (hostDone) {
-        const libecap::Area tmpVb= hostx->vbContent(0, libecap::nsize);
-        if (tmpVb.size == 0) {
-            vbFinished();
+    // body, because there won't be another notification if we did and
+    // do NOT call processContent again as this is handled by vbFinished
+    if (hostDone && lastVb.size == numStored) {
+        LOG_DBG("finished reading virgin body");
+        vbFinished();
+    } else {
+        if (sendingAb == opOn || sendingAb == opWaiting) {
+            processContent();
         }
     }
-
-    if (sendingAb == opOn || sendingAb == opWaiting)
-        processContent();
 }
 
 void Adapter::Xaction::noteVbContentAvailable()

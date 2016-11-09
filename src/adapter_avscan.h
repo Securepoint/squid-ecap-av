@@ -32,10 +32,10 @@
 
 #ifdef DEBUG
   #define FUNCENTER() cerr << "==> " << __FUNCTION__ << endl
-  #define DEBUG(...) fprintf(stderr, __VA_ARGS__)
+  #define LOG_DBG(...) fprintf(stderr, __VA_ARGS__)
 #else
   #define FUNCENTER()
-  #define DEBUG(...)
+  #define LOG_DBG(...)
 #endif
 
 #define ERR cerr << __FUNCTION__ << "(), "
