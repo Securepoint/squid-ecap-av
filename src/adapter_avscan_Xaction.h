@@ -68,12 +68,9 @@ public:
      * index forward by the number of bytes returned
      *
      * @param data Area to store
-     * @param force if set to true, copy data into additional buffer that
-     *        is allocated on the fly --> workaround for missing
-     *        notifications from ecap-Host
      * @return number of bytes actually stored (may be less than data.size)
      */
-    size_type storeContent(const libecap::Area& data, bool force);
+    size_type storeContent(const libecap::Area& data);
 
     /** Total number of bytes buffered.
      */
@@ -120,7 +117,6 @@ private:
     size_type writepos;
     uint64_t received;
     uint64_t returned;
-    libecap::Area lastChunkHack;
 };
 
 /*
