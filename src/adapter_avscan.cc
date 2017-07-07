@@ -126,7 +126,11 @@ libecap::Area Adapter::AbBuffer::getContentFromBuffer(size_type len)
     size_type size;
     if (writepos == readpos) {
         LOG_DBG("getContent: writepos=%u readpos=%u return=%u", writepos, readpos, 0);
-        return libecap::Area::FromTempString("");
+        if (lastChunkHack.size > 0) {
+            return lastChunkHack;
+        } else {
+            return libecap::Area::FromTempString("");
+        }
     } else {
         size = numReadable();
         size = size >= len ? len : size;
@@ -150,8 +154,15 @@ void Adapter::AbBuffer::shiftContent(size_type len)
     LOG_DBG("shiftContent: len=%u", len);
     returned += len;
     if (bypass && rofd_internal == -1) {
-        readpos = (readpos + len) & MASK;
-        LOG_DBG("Shift buffer by %u; new pos=%u", len, readpos);
+        if (writepos == readpos && lastChunkHack.size > 0) {
+            Must(lastChunkHack.size == len);
+            LOG_DBG("%s: Shift on lastChunkHack buffer", __FUNCTION__);
+            // reset temp buffer
+            lastChunkHack = libecap::Area::FromTempString("");
+        } else {
+            readpos = (readpos + len) & MASK;
+            LOG_DBG("%s: Shift buffer by %u; new pos=%u", __FUNCTION__, len, readpos);
+        }
     } else {
         Must(fileOffset >= len);
         UNUSED size_type old = fileOffset;
@@ -165,7 +176,7 @@ bool Adapter::AbBuffer::isEmpty()
     return returned >= received;
 }
 
-Adapter::size_type Adapter::AbBuffer::storeContent(const libecap::Area& data)
+Adapter::size_type Adapter::AbBuffer::storeContent(const libecap::Area& data, bool force)
 {
     size_type nWritten = 0;
     if (bypass && rofd_internal == -1) {
@@ -187,7 +198,12 @@ Adapter::size_type Adapter::AbBuffer::storeContent(const libecap::Area& data)
         std::copy(data.start, data.start + size, &(buf[writepos]));
         writepos = (writepos + size) & MASK;
         nWritten = size;
-        LOG_DBG("storeContent: writepos=%u nWritten=%u", writepos, nWritten);
+        LOG_DBG("%s: writepos=%u nWritten=%u", __FUNCTION__, writepos, nWritten);
+
+        if (force && nWritten < data.size) {
+            lastChunkHack = libecap::Area::FromTempBuffer(data.start + nWritten, data.size - nWritten);
+            nWritten = data.size;
+        }
     } else {
         if (writefd < 0) {
             Must(false);
@@ -792,6 +808,7 @@ libecap::Area Adapter::Xaction::abContent(UNUSED size_type offset, UNUSED size_t
             // reaching this point, we already started trickling and can only
             // abort the process in case of an error (e.g., virus detected)
             hostx->adaptationAborted();
+            return libecap::Area::FromTempString("");
         }
     }
 
@@ -806,7 +823,7 @@ libecap::Area Adapter::Xaction::abContent(UNUSED size_type offset, UNUSED size_t
     // if complete, there is nothing more to return.
     if (sendingAb == opComplete || trickled) {
         trickled = false;
-        LOG_DBG("abContent: return empty buffer");
+        LOG_DBG("%s: return empty buffer", __FUNCTION__);
         return libecap::Area::FromTempString("");
     }
 
@@ -815,7 +832,7 @@ libecap::Area Adapter::Xaction::abContent(UNUSED size_type offset, UNUSED size_t
     trickled = true;
     lastContent = time(NULL);
 
-    return tmpbuf->getContent(sz);
+    return tmpbuf->getContent(sz);;
 }
 
 void Adapter::Xaction::abContentShift(size_type size)
@@ -871,14 +888,18 @@ void Adapter::Xaction::noteContentAvailable()
         const libecap::Header::Value value = libecap::Area::FromTempString(ADAPTERNAME);
         adapted->header().add(name, value);
 
+        LOG_DBG("%s: calling useAdapted()", __FUNCTION__);
         hostx->useAdapted(adapted);
     }
+    LOG_DBG("%s: calling noteAbContentAvailable()", __FUNCTION__);
     hostx->noteAbContentAvailable();
 }
 
 bool Adapter::Xaction::abCheckFinished()
 {
+    FUNCENTER();
     if (tmpbuf->isEmpty() && receivingVb == opComplete) {
+        LOG_DBG("%s: last of ab content processed, send notification", __FUNCTION__);
         sendingAb = opComplete;
         hostx->noteAbContentDone(true);
         return true;
@@ -1016,11 +1037,19 @@ void Adapter::Xaction::vbGetChunk()
         }
     }
 
-    LOG_DBG("store to buffer: start=%p size=%u bypass=%d mustscan=%d hostDone=%d", lastVb.start, lastVb.size, bypass, mustscan, hostDone);
+    LOG_DBG("%s: start=%p size=%u bypass=%d mustscan=%d hostDone=%d", __FUNCTION__, lastVb.start, lastVb.size, bypass, mustscan, hostDone);
 
     Must(tmpbuf != NULL);
-    numStored = tmpbuf->storeContent(lastVb);
+
+    /* workaround for supposed bug in squid's ecap implementation:
+     * it seems that we are only called once after the vbContentDone
+     * notification was called. If we cannot pull the whole data from the
+     * virgin body then, we are stuck. Therefore, if the notification was
+     * received, tell the buffer to try to get all of the remaining content.
+     */
+    numStored = tmpbuf->storeContent(lastVb, hostDone);
     hostx->vbContentShift(numStored);
+    LOG_DBG("%s: shifted vb by %d", __FUNCTION__, numStored);
 
     // set bypass flag if we received more than maxscansize bytes
     if (service->maxscansize && tmpbuf->numReceived() >= service->maxscansize) {
@@ -1029,10 +1058,11 @@ void Adapter::Xaction::vbGetChunk()
     }
 
     LOG_DBG("hostDone=%d; last chunk size=%u last chunk stored=%u", hostDone, lastVb.size, numStored);
+
     // if host has finished already, check if we read all virgin
     // body, because there won't be another notification if we did and
     // do NOT call processContent again as this is handled by vbFinished
-    if (hostDone && lastVb.size == numStored) {
+    if (hostDone) {
         LOG_DBG("finished reading virgin body");
         vbFinished();
     } else {
