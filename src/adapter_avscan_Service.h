@@ -45,6 +45,18 @@ private:
     int linenumber;
 };
 
+class AdditionalOptions
+{
+public:
+    AdditionalOptions(std::string path);
+
+    const std::list<std::string> &getAdditionalKeys();
+    const std::map<std::string, std::string> &getTranslateKeys();
+private:
+    std::list<std::string> additionalKeys;
+    std::map<std::string, std::string> translateKeys;
+};
+
 class Service:public libecap::adapter::Service
 {
 
@@ -84,6 +96,7 @@ public:
     std::string magicdb;     // magic database location
     std::string blocklist;   // blocklist file
     std::string skiplist;    // skiplist file
+    std::string optionlist;  // optionlist file
     std::string tempdir;     // directory to store temp files in
     time_t trickletime;      // the time to wait before trickling
     time_t readtimeout;      // AV daemon socket read timeout
@@ -91,6 +104,8 @@ public:
     size_type tricklesize;   // number of bytes to send
     size_type maxscansize;   // skip scanning bodies greater than maxscansize
     magic_t mcookie;         // magic cookie
+
+    AdditionalOptions *options;
 
 private:
     void readconfig(std::string aPath);

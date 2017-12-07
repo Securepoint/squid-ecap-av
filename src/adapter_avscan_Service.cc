@@ -28,6 +28,8 @@
 #include <cerrno>
 #include <climits>
 #include <cstring>
+#include <list>
+#include <map>
 
 #include <libecap/common/registry.h>
 #include <libecap/common/errors.h>
@@ -126,6 +128,45 @@ bool Adapter::SkipList::match(const char *expr)
     return false;
 }
 
+Adapter::AdditionalOptions::AdditionalOptions(std::string path)
+{
+    constexpr char key_value_translate[] = "^([[:alpha:]]+)[ \t]*(:)[ \t]*([[:print:]]+)";
+    std::string line;
+    regex_t re;
+    regmatch_t rm[5];
+
+    regcomp(&re, key_value_translate, REG_EXTENDED);
+    ifstream in(path.c_str());
+
+    if (in.is_open()) {
+        while (getline (in, line)) {
+            std::string key, val;
+            // first look for translate pairs 'option : translateToLogKey'
+            if (regexec(&re, line.c_str(), 5, rm, 0)) {
+                continue;
+            }
+            key = line.substr(rm[1].rm_so, rm[1].rm_eo - rm[1].rm_so);
+            val = line.substr(rm[3].rm_so, rm[3].rm_eo - rm[3].rm_so);
+            translateKeys[val] = key;
+            additionalKeys.push_back(key);
+        }
+    } else {
+        Logger(ilCritical|flXaction) << "error opening option config file " << path;
+    }
+}
+
+const std::list<std::string> &
+Adapter::AdditionalOptions::getAdditionalKeys()
+{
+    return additionalKeys;
+}
+
+const std::map<std::string, std::string> &
+Adapter::AdditionalOptions::getTranslateKeys()
+{
+    return translateKeys;
+}
+
 std::string Adapter::Service::uri() const
 {
     FUNCENTER();
@@ -176,19 +217,23 @@ void Adapter::Service::readconfig(std::string aPath)
     FUNCENTER();
     Must(aPath != "");
 
+    constexpr char key_value_line[] = "^([[:alpha:]]+)([ \t=]*)([[:print:]]+)";
     std::string line;
     regex_t re;
     regmatch_t rm[5];
 
-    regcomp(&re, "^([[:alpha:]]+)([ \t=]*)([[:print:]]+)", REG_EXTENDED);
+    regcomp(&re, key_value_line, REG_EXTENDED);
+
     ifstream in(aPath.c_str());
     if (in.is_open()) {
         while (getline (in, line)) {
             std::string key, val;
 
-            if (regexec(&re, line.c_str(), 5, rm, 0))
+            if (regexec(&re, line.c_str(), 5, rm, 0)) {
                 continue;
+            }
 
+            // key = value
             key = line.substr(rm[1].rm_so, rm[1].rm_eo - rm[1].rm_so);
             val = line.substr(rm[3].rm_so, rm[3].rm_eo - rm[3].rm_so);
 
@@ -211,11 +256,13 @@ void Adapter::Service::readconfig(std::string aPath)
                 blocklist = val;
             } else if (key == "readtimeout") {
                 if (0 >= (readtimeout = atoi(val.c_str())))
-		    readtimeout = TIMEOUT * 2;
+                    readtimeout = TIMEOUT * 2;
             } else if (key == "writetimeout") {
                 if (0 >= (writetimeout = atoi(val.c_str())))
-		    writetimeout = TIMEOUT;
-	    }
+                    writetimeout = TIMEOUT;
+            } else if (key == "optionlist") {
+                optionlist = val;
+            }
         }
         in.close();
     } else {
@@ -281,6 +328,9 @@ void Adapter::Service::start()
     }
     skipList = new Adapter::SkipList(skiplist);
     blockList = new Adapter::SkipList(blocklist);
+    if (optionlist.length() > 0) {
+        options = new Adapter::AdditionalOptions(optionlist);
+    }
     Logger(flApplication) << ADAPTERNAME << " started";
 }
 
@@ -294,6 +344,8 @@ void Adapter::Service::stop()
         delete(skipList);
     if (blockList)
         delete(blockList);
+    if (options)
+        delete(options);
 
     libecap::adapter::Service::stop();
 }

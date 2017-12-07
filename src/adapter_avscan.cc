@@ -41,6 +41,8 @@
 
 #include <fstream>
 #include <sstream>
+#include <map>
+#include <list>
 #include <iostream>
 #include <string>
 #include <cerrno>
@@ -49,6 +51,7 @@
 #include <libecap/common/errors.h>
 #include <libecap/common/header.h>
 #include <libecap/common/names.h>
+#include <libecap/common/named_values.h>
 #include <libecap/adapter/service.h>
 #include <libecap/adapter/xaction.h>
 #include <libecap/host/xaction.h>
@@ -279,6 +282,30 @@ Adapter::AbBuffer::makeBuffer(bool createFile,
     return libecap::shared_ptr<Adapter::AbBuffer>(new AbBuffer(createFile, service, statusString));
 }
 
+class AppendingVisitor : public libecap::NamedValueVisitor {
+public:
+    AppendingVisitor(const std::map<std::string, std::string> &keyMapping,
+                     std::map<std::string, std::string> &appendTo) :
+        keymap(keyMapping),
+        appendTo(appendTo)
+    {};
+
+    virtual ~AppendingVisitor() {};
+
+    virtual void visit(const libecap::Name &name, const libecap::Area &value)
+    {
+        if (keymap.count(name.image()) > 0) {
+            std::string tmp = keymap.at(name.image());
+            appendTo[tmp] = value.toString();
+        } else {
+            appendTo[name.image()] = value.toString();
+        }
+    }
+
+private:
+    const std::map<std::string, std::string> &keymap;
+    std::map<std::string, std::string> &appendTo;
+};
 
 libecap::Area Adapter::Xaction::ErrorPage(void)
 {
@@ -297,15 +324,68 @@ libecap::Area Adapter::Xaction::ErrorPage(void)
     return libecap::Area::FromTempString(errmsg);
 }
 
+void Adapter::Xaction::log_result() {
+    std::stringstream message;
+    std::map<std::string, std::string> resultDict;
+
+    // also emit old format, just in case somebody is relying on it
+    std::stringstream old;
+
+    if (Ctx) {
+        if (Ctx->status == stInfected) {
+            resultDict[LOG_KEY_STATUS] = "INFECTED";
+            old << "INFECTED, " << statusString;
+        } else if (Ctx->status == stBlocked) {
+            resultDict[LOG_KEY_STATUS] = "BLOCKED";
+            old << "BLOCKED, " << statusString;
+        } else if (statusString != "OK") {
+            resultDict[LOG_KEY_STATUS] = "ERROR";
+            message << "\"ERROR\" reason=\"" << statusString << "\"";
+            old << statusString;
+        } else {
+            // do not log anything
+            return;
+        }
+        resultDict[LOG_KEY_REASON] = statusString;
+        resultDict[LOG_KEY_FILESIZE] = std::to_string(tmpbuf->numReceived());
+
+        // add URL from original request
+        const libecap::Message &originalMessage = hostx->cause();
+        try {
+            const libecap::RequestLine &originalReq = dynamic_cast<const libecap::RequestLine&>(originalMessage.firstLine());
+            resultDict[LOG_KEY_URL] = originalReq.uri().toString();
+        } catch (const std::bad_cast &e) {
+            // we should always have some request
+        }
+
+        // keep "old" output format around to avoid surprises
+        Logger(ilCritical|flXaction) << old.str();
+
+        std::list<std::string> keys = { LOG_KEY_STATUS, LOG_KEY_REASON, LOG_KEY_URL, LOG_KEY_FILESIZE };
+
+        if (service->options) {
+            try {
+                AppendingVisitor visi(service->options->getTranslateKeys(), resultDict);
+                hostx->visitEachOption(visi);
+            } catch (const std::exception &e) {
+                Logger(ilCritical|flXaction) << e.what();
+            }
+
+            const std::list<std::string> &additionalKeys = service->options->getAdditionalKeys();
+            for (auto it = additionalKeys.begin(); it != additionalKeys.end(); ++it) {
+                keys.push_back(*it);
+            }
+        }
+
+        for (auto it = keys.begin(); it != keys.end(); ++it) {
+            message << *it << "=\"" << resultDict[*it] << "\" ";
+        }
+        Logger(ilCritical|flXaction) << message.str();
+    }
+}
+
 void Adapter::Xaction::cleanup(void) {
     if (Ctx) {
-        if (Ctx->status == stInfected)
-            Logger(ilCritical|flXaction) << "INFECTED, " << statusString;
-        else if (Ctx->status == stBlocked)
-            Logger(ilCritical|flXaction) << "BLOCKED, " << statusString;
-        else if (statusString != "OK")
-            Logger(ilCritical|flXaction) << statusString;
-
         if (-1 != Ctx->sockfd)
             close(Ctx->sockfd);
 
@@ -732,8 +812,9 @@ void Adapter::Xaction::start()
 void Adapter::Xaction::stop()
 {
     FUNCENTER();
-    hostx = 0;
+    log_result();
     cleanup();
+    hostx = 0;
     // the caller will delete
 }
 

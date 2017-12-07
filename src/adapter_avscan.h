@@ -43,4 +43,8 @@
 #define TIMEOUT 5
 typedef enum { engineAuto, engineClamav, engineCommtouch } ScanEngine;
 
+constexpr auto LOG_KEY_STATUS = "status";
+constexpr auto LOG_KEY_REASON = "reason";
+constexpr auto LOG_KEY_URL = "url";
+constexpr auto LOG_KEY_FILESIZE = "filesize";
 #endif

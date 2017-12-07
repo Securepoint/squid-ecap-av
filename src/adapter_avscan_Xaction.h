@@ -195,6 +195,7 @@ private:
     void checkFileType(libecap::Area area);
     void noteContentAvailable(void);
     void cleanup(void);
+    void log_result(void);
     bool abCheckFinished();
     void vbFinished();
     void vbGetChunk();
