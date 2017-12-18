@@ -167,6 +167,18 @@ Adapter::AdditionalOptions::getTranslateKeys()
     return translateKeys;
 }
 
+Adapter::Service::Service() :
+        skipList(NULL),
+        blockList(NULL),
+        trickletime(30),
+        readtimeout(TIMEOUT * 2),
+        writetimeout(TIMEOUT),
+        tricklesize(10),
+        maxscansize(0),
+        options(NULL),
+        mcookie(NULL)
+{}
+
 std::string Adapter::Service::uri() const
 {
     FUNCENTER();
@@ -301,11 +313,6 @@ void Adapter::Service::start()
     skiplist    = "/etc/squid/ecap_adapter_av.skip";
     blocklist   = "/etc/squid/ecap_adapter_av.block";
     tempdir     = "/var/tmp";
-    maxscansize = 0;
-    trickletime = 30;
-    tricklesize = 10;
-    readtimeout = TIMEOUT * 2;
-    writetimeout= TIMEOUT;
 
     readconfig(configfn);
 
@@ -340,12 +347,18 @@ void Adapter::Service::stop()
 
     if (mcookie)
         magic_close(mcookie);
-    if (skipList)
+    if (skipList) {
         delete(skipList);
-    if (blockList)
+        skipList = NULL;
+    }
+    if (blockList) {
         delete(blockList);
-    if (options)
+        blockList = NULL;
+    }
+    if (options) {
         delete(options);
+        options = NULL;
+    }
 
     libecap::adapter::Service::stop();
 }

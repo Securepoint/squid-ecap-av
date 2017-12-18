@@ -61,6 +61,7 @@ class Service:public libecap::adapter::Service
 {
 
 public:
+    Service();
     // About
     virtual std::string uri() const;    // unique across all vendors
     virtual std::string tag() const;    // changes with version and config
