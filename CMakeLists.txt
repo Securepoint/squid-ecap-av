@@ -1,7 +1,19 @@
 CMAKE_MINIMUM_REQUIRED(VERSION 2.4)
 PROJECT(squid-ecap-av CXX)
 
-SET(PACKAGE_VERSION "1.0.9")
+include(CheckCXXCompilerFlag)
+CHECK_CXX_COMPILER_FLAG("-std=c++11abc" CXX11)
+CHECK_CXX_COMPILER_FLAG("-std=c++0x" CXX0X)
+
+IF(CXX11)
+  SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
+ELSEIF(CXX0X)
+  SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++0x")
+ELSE()
+  MESSAGE(FATAL_ERROR "c++11 (or fallback c++0x) support is required to build the ecap adapter")
+ENDIF()
+
+SET(PACKAGE_VERSION "1.0.11")
 SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -W -Wall -DPACKAGE_VERSION=\\\"${PACKAGE_VERSION}\\\"")
 SET(MODDIR "${CMAKE_INSTALL_PREFIX}/libexec/squid/" CACHE PATH "Directory to install the eCAP adapater to.")
 SET(DOCDIR "${CMAKE_INSTALL_PREFIX}/share/doc/squid-ecap-av-${PACKAGE_VERSION}" CACHE PATH "Directory to install the documentation to.")

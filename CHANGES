@@ -1,3 +1,12 @@
+version 1.0.11
+
+  + fix a bug that could cause a deadlock between host and adapter due
+    the adapter being unaware of new available virgin content
+  + added a configuration option for an option list file, which is
+    expected to contain optionname : newoptionname pairs for adapter options. Those
+    are passed to the squid logger as newoptionname="<valueof(optionname)>"
+  + with squid moving to c++11, the ecap adapter requires c++11 
+
 version 1.0.10
 
   + refactor buffering and fix aborting download

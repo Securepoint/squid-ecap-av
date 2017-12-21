@@ -175,8 +175,8 @@ Adapter::Service::Service() :
         writetimeout(TIMEOUT),
         tricklesize(10),
         maxscansize(0),
-        options(NULL),
-        mcookie(NULL)
+        mcookie(NULL),
+        options(NULL)
 {}
 
 std::string Adapter::Service::uri() const
