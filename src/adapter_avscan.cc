@@ -347,7 +347,7 @@ void Adapter::Xaction::log_result() {
             return;
         }
         resultDict[LOG_KEY_REASON] = statusString;
-        resultDict[LOG_KEY_FILESIZE] = std::to_string(tmpbuf->numReceived());
+        resultDict[LOG_KEY_FILESIZE] = std::to_string(tmpbuf ? tmpbuf->numReceived() : 0);
 
         // add URL from original request
         const libecap::Message &originalMessage = hostx->cause();
@@ -412,7 +412,7 @@ void Adapter::Xaction::checkFileType(libecap::Area area)
                 statusString = "bad mime type detected: ";
                 statusString += mimetype;
                 Ctx->status = stBlocked;
-                        mustscan = false;
+                mustscan = false;
             }
         }
     }
