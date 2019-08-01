@@ -1,3 +1,7 @@
+version 1.0.12
+
+  + fix crash if filetype blocking is enabled (introduced in 1.0.11)
+
 version 1.0.11
 
   + fix a bug that could cause a deadlock between host and adapter due
