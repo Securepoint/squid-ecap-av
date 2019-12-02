@@ -106,7 +106,8 @@ void Adapter::SkipList::add(std::string s)
         return;
     }
 
-    regfree(regex);
+    if (regex)
+        regfree(regex);
 }
 
 bool Adapter::SkipList::ready(void)
