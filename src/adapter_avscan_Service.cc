@@ -106,7 +106,7 @@ void Adapter::SkipList::add(std::string s)
         return;
     }
 
-    delete(regex);
+    regfree(regex);
 }
 
 bool Adapter::SkipList::ready(void)
@@ -135,10 +135,10 @@ Adapter::AdditionalOptions::AdditionalOptions(std::string path)
     regex_t re;
     regmatch_t rm[5];
 
-    regcomp(&re, key_value_translate, REG_EXTENDED);
     ifstream in(path.c_str());
 
     if (in.is_open()) {
+        regcomp(&re, key_value_translate, REG_EXTENDED);
         while (getline (in, line)) {
             std::string key, val;
             // first look for translate pairs 'option : translateToLogKey'
@@ -150,6 +150,7 @@ Adapter::AdditionalOptions::AdditionalOptions(std::string path)
             translateKeys[val] = key;
             additionalKeys.push_back(key);
         }
+        regfree(&re);
     } else {
         Logger(ilCritical|flXaction) << "error opening option config file " << path;
     }
@@ -234,10 +235,9 @@ void Adapter::Service::readconfig(std::string aPath)
     regex_t re;
     regmatch_t rm[5];
 
-    regcomp(&re, key_value_line, REG_EXTENDED);
-
     ifstream in(aPath.c_str());
     if (in.is_open()) {
+        regcomp(&re, key_value_line, REG_EXTENDED);
         while (getline (in, line)) {
             std::string key, val;
 
@@ -276,6 +276,7 @@ void Adapter::Service::readconfig(std::string aPath)
                 optionlist = val;
             }
         }
+        regfree(&re);
         in.close();
     } else {
 	Logger(ilCritical|flApplication) << "can't open " << aPath;
