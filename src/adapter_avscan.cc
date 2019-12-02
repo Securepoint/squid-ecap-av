@@ -35,6 +35,7 @@
 #include <sys/un.h>
 #include <sys/uio.h>
 #include <fcntl.h>
+#include <poll.h>
 #include <limits.h>
 #include <inttypes.h>    // uint32_t
 #include <arpa/inet.h>    // htonl
@@ -420,10 +421,18 @@ void Adapter::Xaction::checkFileType(libecap::Area area)
         mustscan = false;
 }
 
+int iowait(int fd, int timeout, short what)
+{
+    struct pollfd pfd;
+
+    pfd.fd = fd;
+    pfd.events = what;
+    pfd.revents = 0;
+    return poll(&pfd, 1, timeout * 1000);
+}
+
 int Adapter::Xaction::avWriteCommand(const char *command)
 {
-    fd_set wfds;
-    struct timeval tv;
     int n, r;
 
     FUNCENTER();
@@ -431,21 +440,15 @@ int Adapter::Xaction::avWriteCommand(const char *command)
     Must(command);
     n = strlen(command) + 1;
 
-    tv.tv_sec = service->writetimeout;
-    tv.tv_usec = 0;
-
-    FD_ZERO(&wfds);
-    FD_SET(Ctx->sockfd, &wfds);
-
     if (n == (r = write(Ctx->sockfd, command, n))) {
         return n;
     } else if (r == -1 && errno != EAGAIN) {
         statusString = "can't write to AV-daemon socket: ";
         statusString += strerror(errno);
-    } else if (-1 == select(Ctx->sockfd + 1, NULL, &wfds, NULL, &tv)) {
-        statusString = "AV-daemon (w)socket select failed: ";
+    } else if (-1 == (r = iowait(Ctx->sockfd, service->writetimeout, POLLOUT))) {
+        statusString = "AV-daemon (w)socket iowait failed: ";
         statusString += strerror(errno);
-    } else if (!(FD_ISSET(Ctx->sockfd, &wfds))) {
+    } else if (0 == r) {
         statusString = "AV-daemon (w)socket timeout";
     } else {
         // write the trailing NULL character too
@@ -456,24 +459,15 @@ int Adapter::Xaction::avWriteCommand(const char *command)
 
 int Adapter::Xaction::avReadResponse(void)
 {
-    fd_set rfds;
-    struct timeval tv;
     int n, off = 0;
 
     FUNCENTER();
 
-    tv.tv_sec = service->readtimeout;
-    tv.tv_usec = 0;
-
-    FD_ZERO(&rfds);
-    FD_SET(Ctx->sockfd,&rfds);
-
     while (1) {
-        n = -1;
-        if (-1 == select(Ctx->sockfd + 1, &rfds, NULL, NULL, &tv)) {
-            statusString = "AV-daemon (r)socket select failed: ";
+        if (-1 == (n = iowait(Ctx->sockfd, service->writetimeout, POLLIN))) {
+            statusString = "AV-daemon (r)socket iowait failed: ";
             statusString += strerror(errno);
-        } else if (!FD_ISSET(Ctx->sockfd, &rfds)) {
+        } else if (0 == n) {
             statusString = "AV-daemon (r)socket timeout";
             n = -2;
         } else if (-1 == (n = read(Ctx->sockfd, Ctx->avbuf + off, sizeof(Ctx->avbuf) - off))) {
