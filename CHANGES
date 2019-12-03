@@ -1,3 +1,7 @@
+version 1.0.13
+
+  + use poll() to handle fds greater FD_SETSIZE
+
 version 1.0.12
 
   + fix crash if filetype blocking is enabled (introduced in 1.0.11)
