@@ -464,11 +464,10 @@ int Adapter::Xaction::avReadResponse(void)
     FUNCENTER();
 
     while (1) {
-        if (-1 == (n = iowait(Ctx->sockfd, service->writetimeout, POLLIN))) {
+        if (-1 == (n = iowait(Ctx->sockfd, service->readtimeout, POLLIN))) {
             statusString = "AV-daemon (r)socket iowait failed: ";
             statusString += strerror(errno);
         } else if (0 == n) {
-            statusString = "AV-daemon (r)socket timeout";
             n = -2;
         } else if (-1 == (n = read(Ctx->sockfd, Ctx->avbuf + off, sizeof(Ctx->avbuf) - off))) {
             statusString = "can't read from AV-daemon socket: ";
@@ -827,8 +826,8 @@ void Adapter::Xaction::abMake()
     Must(sendingAb == opWaiting);       // have not yet started
     Must(hostx->virgin().body());    // that is our only source of ab content
 
-    // we are or were receiving vb
-    Must(receivingVb == opOn || receivingVb == opComplete);
+    // we are or were receiving or are finished but still scanning
+    Must(receivingVb == opOn || receivingVb == opComplete || receivingVb == opScanning);
 
     sendingAb = opOn;
 }
