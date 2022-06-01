@@ -341,7 +341,6 @@ void Adapter::Xaction::log_result() {
             old << "BLOCKED, " << statusString;
         } else if (statusString != "OK") {
             resultDict[LOG_KEY_STATUS] = "ERROR";
-            message << "\"ERROR\" reason=\"" << statusString << "\"";
             old << statusString;
         } else {
             // do not log anything
