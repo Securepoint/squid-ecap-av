@@ -458,6 +458,7 @@ int Adapter::Xaction::avWriteCommand(const char *command)
 
 int Adapter::Xaction::avReadResponse(void)
 {
+    int ret = 0;
     int n, off = 0;
 
     FUNCENTER();
@@ -466,20 +467,25 @@ int Adapter::Xaction::avReadResponse(void)
         if (-1 == (n = iowait(Ctx->sockfd, service->readtimeout, POLLIN))) {
             statusString = "AV-daemon (r)socket iowait failed: ";
             statusString += strerror(errno);
+            ret = -1;
         } else if (0 == n) {
-            n = -2;
+            ret = -2;
         } else if (-1 == (n = read(Ctx->sockfd, Ctx->avbuf + off, sizeof(Ctx->avbuf) - off))) {
             statusString = "can't read from AV-daemon socket: ";
             statusString += strerror(errno);
+            ret = -1;
         } else if ((int)sizeof(Ctx->avbuf) <= (off += n)) {
             statusString = "AV-buffer to small";
-            n = -1;
+            ret = -1;
         } else if (Ctx->avbuf[off - 1] != '\0') {
             continue;
         }
         break;
     }
-    return n;
+    if (ret == 0) {
+      ret = off;
+    }
+    return ret;
 }
 
 void Adapter::Xaction::avStartCommtouch(void)
