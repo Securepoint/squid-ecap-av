@@ -742,6 +742,8 @@ void Adapter::Xaction::avCheckVersion(void)
 
         if (0 == strncasecmp(Ctx->avbuf, "clamav", 6)) {
             engine = engineClamav;
+        } else if (0 == strncasecmp(Ctx->avbuf, "ikarus", 6)) {
+            engine = engineClamav;
             // commtouch csamd doesn't return a name
         } else if (6 == sscanf(Ctx->avbuf, "[%d.%d|%[.0-9]|%[.0-9]|%[0-9]|%[0-9]]", &major, &minor, s, s, s, s)) {
             engine = (major > 1 || minor >= 13) ? engineClamav : engineCommtouch;
