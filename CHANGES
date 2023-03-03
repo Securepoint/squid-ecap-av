@@ -1,3 +1,11 @@
+version 1.0.15
+  + fix avReadResponse for multi-read replies, which could wrongly cause
+    an abort
+  + fix duplicated part in error message passed to squid
+  + add detection of ikarus scanserver and use it with the clamav engine
+  + use c++11 if available
+  + adapt sample config to match socket path used in clamav sample config
+
 version 1.0.14
 
   + fix wrong handling of AVscan response timeouts
