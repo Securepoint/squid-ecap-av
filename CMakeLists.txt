@@ -13,7 +13,7 @@ ELSE()
   MESSAGE(FATAL_ERROR "c++11 (or fallback c++0x) support is required to build the ecap adapter")
 ENDIF()
 
-SET(PACKAGE_VERSION "1.0.15")
+SET(PACKAGE_VERSION "1.0.16")
 SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -W -Wall -DPACKAGE_VERSION=\\\"${PACKAGE_VERSION}\\\"")
 SET(MODDIR "${CMAKE_INSTALL_PREFIX}/libexec/squid/" CACHE PATH "Directory to install the eCAP adapater to.")
 SET(DOCDIR "${CMAKE_INSTALL_PREFIX}/share/doc/squid-ecap-av-${PACKAGE_VERSION}" CACHE PATH "Directory to install the documentation to.")
