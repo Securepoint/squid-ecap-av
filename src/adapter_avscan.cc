@@ -397,27 +397,29 @@ void Adapter::Xaction::cleanup(void) {
 /**
  * Determines if we should scan or not.
  */
-void Adapter::Xaction::checkFileType(libecap::Area area)
+int Adapter::Xaction::matchMime(const char *mimetype)
 {
+    int ret = 0;
     FUNCENTER();
-    mustscan = true;
 
-    if (area.size && service->skipList->ready()) {
-        const char *mimetype = magic_buffer(service->mcookie, area.start, area.size);
+    if (service->skipList->ready()) {
+        LOG_DBG("detected mime type '%s'\n", mimetype ?: "n/a");
         if (mimetype) {
-            if (service->skipList->match(mimetype))
-                mustscan = false;
+            if (service->skipList->match(mimetype)) {
+                LOG_DBG("skipping\n");
+                ret = 1;
+            }
 
             if (service->blockList->match(mimetype)) {
                 statusString = "bad mime type detected: ";
                 statusString += mimetype;
                 Ctx->status = stBlocked;
-                mustscan = false;
+                LOG_DBG("blocking\n");
+                ret = -1;
             }
         }
     }
-    if (bypass)
-        mustscan = false;
+    return ret;
 }
 
 int iowait(int fd, int timeout, short what)
@@ -763,7 +765,7 @@ Adapter::Xaction::Xaction(libecap::shared_ptr < Service > aService, libecap::hos
         hostDone(false)
 {
     engine = engineAuto;
-    trickled = senderror = bypass = mustscan = false;
+    trickled = senderror = bypass = mustscan = scanMimeAgain = false;
     statusString = "OK";
     Ctx = 0;
     startTime = lastContent = 0;
@@ -862,19 +864,12 @@ libecap::Area Adapter::Xaction::abContent(UNUSED size_type offset, UNUSED size_t
     // required to not raise an exception on the final call with opComplete
     Must(sendingAb == opOn || sendingAb == opComplete);
 
-    // Error?
-    if (Ctx->status != stOK) {
-        stopVb();
-        sendingAb = opComplete;
-        // Nothing written so far. We can send an error message!
-        if (senderror) {
-            return ErrorPage();
-        } else {
-            // reaching this point, we already started trickling and can only
-            // abort the process in case of an error (e.g., virus detected)
-            hostx->adaptationAborted();
-            return libecap::Area::FromTempString("");
-        }
+    // Error while we were already trickling the virgin body?
+    if (Ctx->status != stOK && !senderror) {
+        // reaching this point, we already started trickling and can only
+        // abort the process in case of an error (e.g., virus detected)
+        hostx->adaptationAborted();
+        return libecap::Area::FromTempString("");
     }
 
     // finished receiving?
@@ -911,7 +906,7 @@ void Adapter::Xaction::abContentShift(size_type size)
     // check if we are finished with abContent
     abCheckFinished();
 
-    if (tmpbuf->isEmpty()) {
+    if (tmpbuf->isEmpty() && receivingVb == opOn) {
         LOG_DBG("%s: buffer ready to read more --> get more", __FUNCTION__);
         // retrieve more data if our buffer is ready to handle it
         vbGetChunk();
@@ -953,6 +948,12 @@ void Adapter::Xaction::noteContentAvailable()
                 statusLine->statusCode(Ctx->status == stError ? 500 : 403);
 
             senderror = true;
+            // in this case, replace tmp buffer with an error buffer
+            stopVb();
+            LOG_DBG("%s: error; replacing adaptationBuffer with error", __func__);
+            // Nothing written so far. We can send an error message!
+            tmpbuf = AbBuffer::makeBuffer(1, service, statusString);
+            tmpbuf->storeContent(ErrorPage());
         }
 
         const libecap::Name name("X-Ecap");
@@ -979,8 +980,21 @@ bool Adapter::Xaction::abCheckFinished()
     }
 }
 
+int Adapter::Xaction::mimeCheckOnFinish()
+{
+  FUNCENTER();
+  int ret = 0;
+  if (scanMimeAgain) {
+      const char *mimetype = magic_descriptor(service->mcookie, tmpbuf->getReadonlyFd());
+      ret = matchMime(mimetype);
+  }
+  LOG_DBG("%s: returning %d (scanMimeAgain=%d)", __func__, ret, scanMimeAgain);
+  return ret;
+}
+
 void Adapter::Xaction::vbFinished()
 {
+    int ret_mime;
     Must(Ctx);
     Must(receivingVb == opOn);
     Must(tmpbuf != NULL);
@@ -993,6 +1007,12 @@ void Adapter::Xaction::vbFinished()
         receivingVb = opNever;
         return;
     } else if (bypass) {
+        receivingVb = opComplete;
+        LOG_DBG("%s: receivingVb=%d", __func__, receivingVb);
+    } else if (0 != (ret_mime = mimeCheckOnFinish())) {
+        if (ret_mime == 1) {
+          LOG_DBG("%s: receivingVb=%d", __func__, receivingVb);
+        }
         receivingVb = opComplete;
     } else {
         receivingVb = opScanning;
@@ -1047,6 +1067,25 @@ void Adapter::Xaction::processContent()
     }
 }
 
+bool Adapter::Xaction::isCompound(const char *mimetype)
+{
+  static const char *compoundTypes[] = {
+    "application/CDFV2",
+    "application/CDFV2-corrupt",
+    "application/x-ole-storage"
+  };
+
+  if (NULL == mimetype) {
+  } else {
+    for (size_t i = 0; i < sizeof(compoundTypes)/sizeof(*compoundTypes); i++) {
+      if (0 == strcmp(compoundTypes[i], mimetype)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 void Adapter::Xaction::vbGetChunk()
 {
     size_type numStored;
@@ -1081,7 +1120,33 @@ void Adapter::Xaction::vbGetChunk()
             }
         }
 
-        checkFileType(lastVb);
+        LOG_DBG("%s: pre filetype check: mustscan=%d status=%d (%s)", __func__, mustscan, Ctx->status, statusString.c_str());
+        const char *mimetype = magic_buffer(service->mcookie, lastVb.start, lastVb.size);
+
+        int ret_mime = matchMime(mimetype);
+        switch (ret_mime) {
+          case 0:
+            // hardcoded exception for Microsoft compound binary format; which is
+            // known to cause problems if only a couple of bytes are available
+            if (isCompound(mimetype)) {
+              scanMimeAgain = 1;
+              // do not bypass in this case, but try mime detection again if
+              // we reach the size limit; this is a trade-off between detection
+              // accuracy and having to write tmpfiles that may or may not
+              // help to identify the file type
+              bypass = 0;
+              LOG_DBG("compound type %s detected; deferring MIME Type detection to end of virgin body/maxlen", mimetype ?: "n/a");
+            }
+            mustscan = 1;
+            break;
+          case -1:
+          case 1:
+            // -1: error is handled elsewhere
+            // 1: skip means mustscan stays "off"
+            break;
+        }
+
+        LOG_DBG("%s: post filetype check: mustscan=%d status=%d (%s)", __func__, mustscan, Ctx->status, statusString.c_str());
 
         if (Ctx->status != stOK) {
             LOG_DBG("error case");
@@ -1117,7 +1182,12 @@ void Adapter::Xaction::vbGetChunk()
     LOG_DBG("%s: shifted vb by %d", __FUNCTION__, numStored);
 
     // set bypass flag if we received more than maxscansize bytes
-    if (service->maxscansize && tmpbuf->numReceived() >= service->maxscansize) {
+    if (!bypass && service->maxscansize && tmpbuf->numReceived() >= service->maxscansize) {
+      LOG_DBG("%s: maxscansize exceeded (%" PRIu64 " > %zu); check MIME again and bypass", __func__, tmpbuf->numReceived(), service->maxscansize);
+        // but first check MIME-type again from File; last chance to block before
+        // we discard all data; return value does not matter here, we either block
+        // (error set in function) or skip (return 0 or 1)
+        mimeCheckOnFinish();
         bypass = 1;
         tmpbuf->discardFile();
     }

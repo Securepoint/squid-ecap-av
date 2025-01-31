@@ -192,8 +192,10 @@ private:
     int  avWriteCommand(const char *command);
     int  avWriteChunk(char *buf, ssize_t len);
     void processContent(void);
-    void checkFileType(libecap::Area area);
     void noteContentAvailable(void);
+    int matchMime(const char *mimetype);
+    int mimeCheckOnFinish();
+    bool isCompound(const char *mimetype);
     void cleanup(void);
     void log_result(void);
     bool abCheckFinished();
@@ -204,6 +206,7 @@ private:
     time_t startTime;
     time_t lastContent;
     bool mustscan;
+    bool scanMimeAgain;
     bool trickled;
     bool senderror;
     bool bypass;
