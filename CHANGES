@@ -1,3 +1,8 @@
+version 1.0.16
+  + improve MIME-type detection for 'application/CDFV2' compound files
+  + fix a couple of exceptions with no functional impact at the end
+    of adaption processing
+
 version 1.0.15
   + fix avReadResponse for multi-read replies, which could wrongly cause
     an abort
