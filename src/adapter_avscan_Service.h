@@ -57,6 +57,14 @@ private:
     std::map<std::string, std::string> translateKeys;
 };
 
+class Magic
+{
+  public:
+    magic_t mcookie;         // magic cookie
+    Magic(const std::string &magicdb); 
+    ~Magic(); 
+};
+
 class Service:public libecap::adapter::Service
 {
 
@@ -91,8 +99,8 @@ public:
 #endif
 
     // Config
-    SkipList *skipList;      // list of mimetypes to exclude from scanning
-    SkipList *blockList;     // list of mimetypes to mark as bad
+    std::unique_ptr<SkipList> skipList;      // list of mimetypes to exclude from scanning
+    std::unique_ptr<SkipList> blockList;     // list of mimetypes to mark as bad
     std::string avdsocket;   // path to the AV daemon socket
     std::string magicdb;     // magic database location
     std::string blocklist;   // blocklist file
@@ -104,9 +112,9 @@ public:
     time_t writetimeout;     // AV daemon socket write timeout
     size_type tricklesize;   // number of bytes to send
     size_type maxscansize;   // skip scanning bodies greater than maxscansize
-    magic_t mcookie;         // magic cookie
 
-    AdditionalOptions *options;
+    std::unique_ptr<Magic> magic;
+    std::unique_ptr<AdditionalOptions> options;
 
 private:
     void readconfig(std::string aPath);

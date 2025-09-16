@@ -35,14 +35,14 @@ using libecap::flApplication;
 
 class Logger {
     public:
-	Logger(const libecap::LogVerbosity lv);
-	~Logger();
-	template <class T>
-	const Logger &operator <<(const T &msg) const {
-	    if (out)
-		*out << msg;
-	    return *this;
-	}
+        Logger(const libecap::LogVerbosity lv);
+        ~Logger();
+        template <class T>
+        const Logger &operator <<(const T &msg) const {
+            if (out)
+                *out << msg;
+            return *this;
+        }
     private:
-	std::ostream *out;
+        std::ostream *out;
 };

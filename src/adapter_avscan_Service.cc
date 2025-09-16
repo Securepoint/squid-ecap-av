@@ -24,6 +24,7 @@
 #include <fstream>
 #include <iostream>
 #include <algorithm>
+#include <memory>
 #include <string>
 #include <cerrno>
 #include <climits>
@@ -65,22 +66,23 @@ Adapter::SkipList::SkipList(std::string aPath)
         }
         in.close();
     } else {
-	Logger(ilCritical|flApplication) << "can't open " << aPath;
+        Logger(ilCritical|flApplication) << "can't open " << aPath;
     }
 }
 
 Adapter::SkipList::~SkipList()
 {
     if (NULL == entries) {
-	/* nothing to free */
+        /* nothing to free */
     } else {
-	struct skipListEntry *entry = entries;
-	while (entry) {
-	    struct skipListEntry *next = entry->next;
-	    regfree(entry->preg);
-	    delete(entry);
-	    entry = next;
-	}
+        struct skipListEntry *entry = entries;
+        while (entry) {
+            struct skipListEntry *next = entry->next;
+            regfree(entry->preg);
+            delete(entry->preg);
+            delete(entry);
+            entry = next;
+        }
     }
 }
 
@@ -96,7 +98,7 @@ void Adapter::SkipList::add(std::string s)
     } else if (!(regex = new regex_t)) {
         /* oom */
     } else if (0 != regcomp(regex, s.c_str(), REG_EXTENDED | REG_NOSUB | REG_ICASE)) {
-	Logger(ilCritical|flApplication) << "invalid regular expression @ " << linenumber;
+        Logger(ilCritical|flApplication) << "invalid regular expression @ " << linenumber;
     } else if (!(entry = new (struct skipListEntry))) {
         /* oom */
     } else {
@@ -127,6 +129,34 @@ bool Adapter::SkipList::match(const char *expr)
         e = e->next;
     }
     return false;
+}
+
+Adapter::Magic::Magic(const std::string &magicdb)
+{
+/* Some old versions of libmagic don't support MAGIC_MIME_TYPE.
+ * But hey, if we have squid-3.1 we should probably also have an
+ * actual version of libmagic. Anyhow, use MAGIC_MIME instead.
+ */
+#ifndef MAGIC_MIME_TYPE
+    if (!(mcookie = magic_open(MAGIC_MIME)))
+#else
+    if (!(mcookie = magic_open(MAGIC_MIME_TYPE)))
+#endif
+    {
+        Logger(ilCritical|flApplication) << "can't initialize magic library, skiplists won't work!";
+    } else if (-1 == magic_load(mcookie, magicdb.c_str())) {
+        Logger(ilCritical|flApplication) << "can't load magic database, skiplists won't work!";
+        magic_close(mcookie);
+        mcookie = NULL;
+    }
+}
+
+Adapter::Magic::~Magic()
+{
+    if (mcookie) {
+        magic_close(mcookie);
+        mcookie = nullptr;
+    }
 }
 
 Adapter::AdditionalOptions::AdditionalOptions(std::string path)
@@ -170,15 +200,15 @@ Adapter::AdditionalOptions::getTranslateKeys()
 }
 
 Adapter::Service::Service() :
-        skipList(NULL),
-        blockList(NULL),
+        skipList(nullptr),
+        blockList(nullptr),
         trickletime(30),
         readtimeout(TIMEOUT * 2),
         writetimeout(TIMEOUT),
         tricklesize(10),
         maxscansize(0),
-        mcookie(NULL),
-        options(NULL)
+        magic(nullptr),
+        options(nullptr)
 {}
 
 std::string Adapter::Service::uri() const
@@ -205,23 +235,23 @@ static libecap::size_type parseunit(std::string s, std::string name)
     libecap::size_type size, calculated;
 
     if (ULONG_MAX == (size = strtoul(s.c_str(), &unit, 10))) {
-	Logger(ilCritical|flApplication) << name << " value '" << s << "' to large, using " << size << " instead";
-	return size;
+        Logger(ilCritical|flApplication) << name << " value '" << s << "' to large, using " << size << " instead";
+        return size;
     }
 
     // skip spaces if any
     while (' ' == *unit) unit++;
     if (0 == strncmp(unit, "KB", 2))
-	calculated = size * 1024;
+        calculated = size * 1024;
     else if (0 == strncmp(unit, "MB", 2))
-	calculated = size * 1024 * 1024;
+        calculated = size * 1024 * 1024;
     else
-	calculated = size;
+        calculated = size;
 
     // check for integer overflow
     if (calculated < size) {
-	Logger(ilCritical|flApplication) << "integer overflow, ignoring unit, using " << size << " instead";
-	calculated = size;
+        Logger(ilCritical|flApplication) << "integer overflow, ignoring unit, using " << size << " instead";
+        calculated = size;
     }
     return calculated;
 }
@@ -280,7 +310,7 @@ void Adapter::Service::readconfig(std::string aPath)
         regfree(&re);
         in.close();
     } else {
-	Logger(ilCritical|flApplication) << "can't open " << aPath;
+        Logger(ilCritical|flApplication) << "can't open " << aPath;
     }
 }
 
@@ -319,26 +349,11 @@ void Adapter::Service::start()
     readconfig(configfn);
 
     LOG_DBG("using avdsocket=%s", avdsocket.c_str());
-/* Some old versions of libmagic don't support MAGIC_MIME_TYPE.
- * But hey, if we have squid-3.1 we should probably also have an
- * actual version of libmagic. Anyhow, use MAGIC_MIME instead.
- */
-#ifndef MAGIC_MIME_TYPE
-    if (!(mcookie = magic_open(MAGIC_MIME)))
-#else
-    if (!(mcookie = magic_open(MAGIC_MIME_TYPE)))
-#endif
-    {
-	Logger(ilCritical|flApplication) << "can't initialize magic library, skiplists won't work!";
-    } else if (-1 == magic_load(mcookie, magicdb.c_str())) {
-	Logger(ilCritical|flApplication) << "can't load magic database, skiplists won't work!";
-        magic_close(mcookie);
-        mcookie = NULL;
-    }
-    skipList = new Adapter::SkipList(skiplist);
-    blockList = new Adapter::SkipList(blocklist);
+    this->magic = std::make_unique<Adapter::Magic>(magicdb);
+    this->skipList = std::make_unique<Adapter::SkipList>(skiplist);
+    this->blockList = std::make_unique<Adapter::SkipList>(blocklist);
     if (optionlist.length() > 0) {
-        options = new Adapter::AdditionalOptions(optionlist);
+        this->options = std::make_unique<Adapter::AdditionalOptions>(optionlist);
     }
     Logger(flApplication) << ADAPTERNAME << " started";
 }
@@ -346,21 +361,6 @@ void Adapter::Service::start()
 void Adapter::Service::stop()
 {
     FUNCENTER();
-
-    if (mcookie)
-        magic_close(mcookie);
-    if (skipList) {
-        delete(skipList);
-        skipList = NULL;
-    }
-    if (blockList) {
-        delete(blockList);
-        blockList = NULL;
-    }
-    if (options) {
-        delete(options);
-        options = NULL;
-    }
 
     libecap::adapter::Service::stop();
 }

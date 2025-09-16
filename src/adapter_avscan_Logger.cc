@@ -36,5 +36,5 @@ Logger::Logger(const libecap::LogVerbosity lv):
 
 Logger::~Logger() {
     if (out)
-	libecap::MyHost().closeDebug(out);
+        libecap::MyHost().closeDebug(out);
 }

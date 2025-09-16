@@ -985,7 +985,7 @@ int Adapter::Xaction::mimeCheckOnFinish()
   FUNCENTER();
   int ret = 0;
   if (scanMimeAgain) {
-      const char *mimetype = magic_descriptor(service->mcookie, tmpbuf->getReadonlyFd());
+      const char *mimetype = magic_descriptor(service->magic->mcookie, tmpbuf->getReadonlyFd());
       ret = matchMime(mimetype);
   }
   LOG_DBG("%s: returning %d (scanMimeAgain=%d)", __func__, ret, scanMimeAgain);
@@ -1121,7 +1121,7 @@ void Adapter::Xaction::vbGetChunk()
         }
 
         LOG_DBG("%s: pre filetype check: mustscan=%d status=%d (%s)", __func__, mustscan, Ctx->status, statusString.c_str());
-        const char *mimetype = magic_buffer(service->mcookie, lastVb.start, lastVb.size);
+        const char *mimetype = magic_buffer(service->magic->mcookie, lastVb.start, lastVb.size);
 
         int ret_mime = matchMime(mimetype);
         switch (ret_mime) {
